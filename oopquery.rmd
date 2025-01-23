@@ -1,0 +1,115 @@
+# Load packages
+```{r}
+library(R6)
+library(httr)
+```
+
+# Create class SQAPI with property: host & method: get
+```{r}
+SQAPI <- R6Class("SQAPI",
+                 public = list(
+                   host = NULL,
+                   initialize = function(host) {
+                     self$host <- host
+                   },
+                   get = function(endpoint) {
+                     # Construct full endpoint URL
+                     full_endpoint <- paste0(self$host, "/", endpoint)
+                     # Return a new instance of the Get class with the SQAPI reference
+                     return(Get$new(full_endpoint, self))  # Pass the SQAPI instance
+                   }
+                 ))
+```
+
+# Create class Request with property: endpoint 
+```{r}
+Request <- R6Class("Request",
+                   public = list(
+                     endpoint = NULL, 
+                     sqapi = NULL,  # Store reference to SQAPI instance
+                     initialize = function(endpoint, sqapi) {
+                       self$endpoint <- endpoint
+                       self$sqapi <- sqapi  # Store the SQAPI instance
+                     },
+                     execute = function() {
+                       # Make a GET request to the endpoint
+                       response <- httr::GET(self$endpoint)
+                       return(response)  # Return the response object
+                     }
+                   ))
+```
+
+# Create class Get within superclass Request
+```{r}
+Get <- R6Class("Get",
+               inherit = Request,
+               public = list(
+                 filters = list(),
+                 initialize = function(endpoint, sqapi) {
+                   super$initialize(endpoint, sqapi)  # Initialize the parent class with endpoint and sqapi (UPDATED)
+                   self$filters <- list()  # Initialize filters list
+                 },
+                 filter = function(name, op, val = NULL) {
+                   # Create a new filter and add it to the filters list
+                   new_filter <- list(name = name, op = op, val = val)
+                   self$filters <- append(self$filters, list(new_filter))
+                   return(self)  # Return the Get instance for method chaining
+                 },
+                 execute = function() {
+                   # Call the parent execute method to perform the GET request
+                   return(super$execute())  # (UPDATED)
+                 }
+               ))
+```
+
+# query_filter UNUSED
+```{r}
+query_filter <- function(name, op, val = NULL) {
+  f  <-  list(name = name, op = op)
+  if (!is.null(val)) {
+    f$val  <- val
+  }
+  return(f)
+}
+
+```
+
+# url_join function UNUSED
+```{r}
+url_join <- function(base, path) {
+  # Remove trailing slashes from base and leading slashes from path
+  base <- sub("/+$", "", base)  # Remove trailing slashes from base
+  path <- sub("^/+", "", path)   # Remove leading slashes from path
+  return(paste0(base, "/", path)) # Concatenate base and path with a single slash
+}
+```
+
+
+# Usage
+```{r}
+
+# Usage example
+# Create an instance of SQAPI
+api <- SQAPI$new(host = "https://squidle.org")
+
+# Use the get method to create an instance of Get
+r <- api$get(endpoint = "api/annotation")
+
+# Call the filter method on the Get instance
+r$filter(name = "name", op = "ilike", val = "ecklonia%")
+
+# Print the filters to verify
+print(r$filters)
+
+# Send request and store the response
+response <- r$execute()  # (UPDATED)
+
+# Print the response status
+print(response$status_code)
+
+# Print the response content (if desired)
+content <- httr::content(response)
+print(content)
+
+```
+
