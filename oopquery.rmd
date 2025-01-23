@@ -6,19 +6,38 @@ library(httr)
 
 # Create class SQAPI with property: host & method: get
 ```{r}
-SQAPI <- R6Class("SQAPI",
-                 public = list(
-                   host = NULL,
-                   initialize = function(host) {
-                     self$host <- host
-                   },
-                   get = function(endpoint) {
-                     # Construct full endpoint URL
-                     full_endpoint <- paste0(self$host, "/", endpoint)
-                     # Return a new instance of the Get class with the SQAPI reference
-                     return(Get$new(full_endpoint, self))  # Pass the SQAPI instance
-                   }
-                 ))
+SQAPI <- R6Class(
+  "SQAPI",
+  public = list(
+    host = NULL,
+    username = NULL,
+    auth = NULL,
+    initialize = function(host) {
+      self$host <- host
+      # Check if username and token are already stored in the session
+      if (is.null(getOption("api_username")) ||
+          is.null(getOption("api_token"))) {
+        # If not, ask for them interactively
+        self$username <- readline(prompt = "Enter your username: ")
+        self$auth <- readline(prompt = "Enter your API token: ")
+        
+        # Store them in session for future use in this session
+        options(api_username = self$username,
+                api_token = self$auth)
+      } else {
+        # If they are already stored, use the saved values
+        self$username <- getOption("api_username")
+        self$auth <- getOption("api_token")
+      }
+    },
+    get = function(endpoint) {
+      # Construct full endpoint URL
+      full_endpoint <- paste0(self$host, "/", endpoint)
+      # Return a new instance of the Get class with the SQAPI reference
+      return(Get$new(full_endpoint, self))  # Pass the SQAPI instance
+    }
+  )
+)
 ```
 
 # Create class Request with property: endpoint 
@@ -33,7 +52,9 @@ Request <- R6Class("Request",
                      },
                      execute = function() {
                        # Make a GET request to the endpoint
-                       response <- httr::GET(self$endpoint)
+                       response <- httr::GET(
+                         self$endpoint,
+                         authenticate(user = self$sqapi$username, password = self$sqapi$auth)                    )
                        return(response)  # Return the response object
                      }
                    ))
