@@ -2,6 +2,7 @@
 ```{r}
 library(R6)
 library(httr)
+library(jsonlite)
 ```
 
 # Create class SQAPI with property: host & method: get
@@ -129,8 +130,8 @@ response <- r$execute()  # (UPDATED)
 print(response$status_code)
 
 # Print the response content (if desired)
-content <- httr::content(response)
-print(content)
-
+json_content <- httr::content(response, "text")
+my_list <- jsonlite::fromJSON(content)
+my_df <- as.data.frame(my_list)
 ```
 
