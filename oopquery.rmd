@@ -31,11 +31,12 @@ SQAPI <- R6Class(
         self$auth <- getOption("api_token")
       }
     },
-    get = function(endpoint) {
+    get = function(endpoint, page = NULL, results_per_page = NULL) {
+    get = function(endpoint, page = NULL, results_per_page = NULL) {
       # Construct full endpoint URL
       full_endpoint <- paste0(self$host, "/", endpoint)
       # Return a new instance of the Get class with the SQAPI reference
-      return(Get$new(full_endpoint, self))  # Pass the SQAPI instance
+      return(Get$new(full_endpoint, self, page, results_per_page))  
     }
   )
 )
@@ -63,6 +64,7 @@ Request <- R6Class("Request",
 
 # Create class Get within superclass Request
 ```{r}
+<<<<<<< Updated upstream
 Get <- R6Class("Get",
                inherit = Request,
                public = list(
@@ -105,7 +107,69 @@ url_join <- function(base, path) {
   return(paste0(base, "/", path)) # Concatenate base and path with a single slash
 }
 ```
+=======
+Get <- R6Class(
+  "Get",
+  inherit = Request,
+  public = list(
+    filters = list(),
+    page = NULL,
+    results_per_page = NULL,
+    initialize = function(endpoint,
+                          sqapi,
+                          page = NULL,
+                          results_per_page = NULL) {
+      super$initialize(endpoint, sqapi)  # Initialize the parent class with endpoint and sqapi
+      self$filters <- list()  # Initialize filters list
+      self$page <- page
+      self$results_per_page <- results_per_page
+    },
+    filter = function(name, op, val) {
+      # Create a new filter and add it to the filters list using query_filter
+      new_filter <- query_filter(name, op, val)
+      self$filters <- append(self$filters, list(new_filter))
+      return(self)  # Return the Get instance for method chaining
+    },
+    execute = function() {
+      # Convert filters into JSON
+      if (length(self$filters) > 0) {
+        query_filters <- lapply(self$filters, function(f) {
+          list(name = f$name,
+               op = f$op,
+               val = f$val)
+        })
 
+        json_filters <-
+          jsonlite::toJSON(list(filters = query_filters), auto_unbox = TRUE)
+        url <- paste0(self$endpoint, "?q=", json_filters)
+      } else {
+        url <- self$endpoint
+      }
+
+      # Append page parameters separately
+      if (!is.null(self$page)) {
+        url <- paste0(url, "&page=", self$page)
+      }
+      if (!is.null(self$results_per_page)) {
+        url <- paste0(url, "&results_per_page=", self$results_per_page)
+      }
+      # Print URL for debugging
+      cat("URL:", url, "\n\n")
+
+      # Make the GET request
+      response <- httr::GET(url,
+                            authenticate(
+                              user = self$sqapi$username,
+                              password = self$sqapi$auth
+                            ))
+
+      cat("Response Status Code:", response$status_code, "\n\n")
+      return(response)
+    }
+  )
+)
+
+```
 
 # Usage
 ```{r}
@@ -115,10 +179,13 @@ url_join <- function(base, path) {
 api <- SQAPI$new(host = "https://squidle.org")
 
 # Use the get method to create an instance of Get
-r <- api$get(endpoint = "api/annotation")
+r <- api$get(endpoint = "api/annotation",
+             page = "1",
+             results_per_page = "10")
+# r <- api$get(endpoint = "api/annotation")
 
 # Call the filter method on the Get instance
-r$filter(name = "name", op = "ilike", val = "ecklonia%")
+r$filter(name = "annotation_set_id", op = "eq", val = "5432")
 
 # Print the filters to verify
 print(r$filters)
@@ -126,12 +193,26 @@ print(r$filters)
 # Send request and store the response
 response <- r$execute()  # (UPDATED)
 
-# Print the response status
-print(response$status_code)
-
-# Print the response content (if desired)
-json_content <- httr::content(response, "text")
-my_list <- jsonlite::fromJSON(content)
-my_df <- as.data.frame(my_list)
+# parse JSON or handle errors
+if (response$status_code == 200) {
+  # Parse the response JSON content
+  json_content <- httr::content(response, "text", encoding = "UTF-8")
+  if (nchar(json_content) > 0) {
+    my_list <- jsonlite::fromJSON(json_content, flatten = TRUE)
+    my_df <- as.data.frame(my_list)
+    
+    # Print a preview of the data
+    print("Succesful request")
+    print(head(my_df))
+  } else {
+    print("No data")
+  }
+} else {
+  # Print the error status and message
+  print(paste("Didn't work. Status code:", response$status_code))
+  print("Response content:")
+  print(httr::content(response, "text", encoding = "UTF-8"))
+}
+>>>>>>> Stashed changes
 ```
 
