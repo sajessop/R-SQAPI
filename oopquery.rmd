@@ -5,7 +5,7 @@ library(httr)
 library(jsonlite)
 ```
 
-# query_filter UNUSED
+# query_filter
 ```{r}
 query_filter <- function(name, op, val = NULL) {
   f  <-  list(name = name, op = op)
@@ -17,7 +17,7 @@ query_filter <- function(name, op, val = NULL) {
 
 ```
 
-# url_join function UNUSED
+# url_join function
 ```{r}
 url_join <- function(base, path) {
   # Remove trailing slashes from base and leading slashes from path
@@ -27,6 +27,7 @@ url_join <- function(base, path) {
 }
 ```
 
+
 # Create class SQAPI with property: host & method: get
 ```{r}
 SQAPI <- R6Class(
@@ -35,8 +36,13 @@ SQAPI <- R6Class(
     host = NULL,
     username = NULL,
     auth = NULL,
-    initialize = function(host) {
-      self$host <- host
+    initialize = function(host = NULL) {
+      # Set default host
+      if (is.null(host)){
+        self$host <- "https://squidle.org"
+      } else{
+        self$host <- host
+      }
       # Check if username and token are already stored in the session
       if (is.null(getOption("api_username")) ||
           is.null(getOption("api_token"))) {
@@ -67,12 +73,16 @@ SQAPI <- R6Class(
 ```{r}
 Request <- R6Class("Request",
                    public = list(
-                     endpoint = NULL, 
+                     endpoint = NULL,
+                     method = NULL,
+                     files = NULL,
+                     data = NULL,
+                     json_data = NULL,
                      sqapi = NULL,  # Store reference to SQAPI instance
                      initialize = function(endpoint, sqapi) {
                        self$endpoint <- endpoint
                        self$sqapi <- sqapi  # Store the SQAPI instance
-                     },
+                       },
                      execute = function() {
                        # Make a GET request to the endpoint
                        response <- httr::GET(
@@ -153,13 +163,13 @@ Get <- R6Class(
 
 # Usage example
 # Create an instance of SQAPI
-api <- SQAPI$new(host = "https://squidle.org")
+api <- SQAPI$new()
 
 # Use the get method to create an instance of Get
-r <- api$get(endpoint = "api/annotation",
-             page = "1",
-             results_per_page = "10")
-# r <- api$get(endpoint = "api/annotation")
+# r <- api$get(endpoint = "api/annotation",
+#              page = "1",
+#              results_per_page = "10")
+ r <- api$get(endpoint = "api/annotation_set/5432/export")
 
 # Call the filter method on the Get instance
 r$filter(name = "annotation_set_id", op = "eq", val = "5432")
