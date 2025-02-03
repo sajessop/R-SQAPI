@@ -1,0 +1,128 @@
+
+# The "r" way
+
+# Load packages
+```{r}
+library(R6)
+library(httr)
+library(jsonlite)
+library(magrittr)
+```
+
+# Create class SQAPI with property: host 
+```{r}
+SQAPI <- R6Class(
+  "SQAPI",
+  public = list(
+    host = NULL,
+    username = NULL,
+    auth = NULL,
+    initialize = function(host = NULL) {
+      # Set default host
+      if (is.null(host)){
+        self$host <- "https://squidle.org"
+      } else{
+        self$host <- host
+      }
+      # Check if username and token are already stored in the session
+      if (is.null(getOption("api_username")) ||
+          is.null(getOption("api_token"))) {
+        # If not, ask for them interactively
+        self$username <- readline(prompt = "Enter your username: ")
+        self$auth <- readline(prompt = "Enter your API token: ")
+        
+        # Store them in session for future use in this session
+        options(api_username = self$username,
+                api_token = self$auth)
+      } else {
+        # If they are already stored, use the saved values
+        self$username <- getOption("api_username")
+        self$auth <- getOption("api_token")
+      }
+    }
+  )
+)
+```
+
+# Function to construct host + endpoint
+```{r}
+base_url <- function(host, endpoint){
+  url <- paste0(host,"/", endpoint)
+  return(url)
+}
+```
+
+# Function to append query filters
+```{r}
+query_filters <- function(base_url,
+                          page = NULL,
+                          results_per_page = NULL,
+                          ...) {
+  filters <- list(...)
+  json_query <- jsonlite::toJSON(list(filters = filters), auto_unbox = TRUE)
+  
+  url <- paste0(base_url, "?q=", json_query)
+  if (!is.null(page)) {
+    url <- paste0(url, "&page=", page)
+  }
+  if (!is.null(results_per_page)) {
+    url <- paste0(url, "&results_per_page=", results_per_page)
+  }
+  return(url)
+}
+```
+
+# Function to make the GET request
+```{r}
+request <- function(url, verb, user, token) {
+  response <- httr::VERB(
+    verb = verb,
+    url = url,
+    config = httr::authenticate(user = user, password = token)
+  )
+  
+  cat("Response Status Code:", response$status_code)
+  return(response)
+}
+```
+
+# Usage 
+```{r}
+# Initialize api to handle authentication (using default host)
+api <- SQAPI$new()
+
+# Construct base url (host + endpoint)
+my_url <- base_url(api$host, endpoint = "api/annotation") %>%
+  query_filters(
+    page = "3",
+    results_per_page = "500",
+    list(name = "annotation_set_id", op = "eq", val = "5432") #pass filters as a list for correct formatting
+  )
+
+# Send request using authentication from instance of SQAPI
+r <- request(my_url, "GET", api$username, api$auth) 
+
+
+# parse JSON or handle errors
+if (r$status_code == 200) {
+  # Parse the response JSON content
+  json_content <- httr::content(r, "text", encoding = "UTF-8")
+  if (nchar(json_content) > 0) {
+    my_list <- jsonlite::fromJSON(json_content, flatten = TRUE)
+    my_df <- as.data.frame(my_list)
+    
+    # Print a preview of the data
+    print("Succesful request")
+    print(head(my_df))
+  } else {
+    print("No data")
+  }
+} else {
+  # Print the error status and message
+  print(paste("Didn't work. Status code:", r$status_code))
+  print("Response content:")
+  print(httr::content(r, "text", encoding = "UTF-8"))
+}
+```
+
+
