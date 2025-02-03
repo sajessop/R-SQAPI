@@ -55,10 +55,15 @@ base_url <- function(host, endpoint){
 # Function to append query filters
 ```{r}
 query_filters <- function(base_url,
+                          name,
+                          op,
+                          val,
                           page = NULL,
-                          results_per_page = NULL,
-                          ...) {
-  filters <- list(...)
+                          results_per_page = NULL
+                          ) {
+  filters <- list(
+    list(name = name, op = op, val = val)
+  )
   json_query <- jsonlite::toJSON(list(filters = filters), auto_unbox = TRUE)
   
   url <- paste0(base_url, "?q=", json_query)
@@ -72,7 +77,7 @@ query_filters <- function(base_url,
 }
 ```
 
-# Function to make the GET request
+# Function to make the VERB request
 ```{r}
 request <- function(url, verb, user, token) {
   response <- httr::VERB(
@@ -86,23 +91,107 @@ request <- function(url, verb, user, token) {
 }
 ```
 
+```{r}
+run_json_call <- function(full_url, api_token) {
+  # Hit the API to get data
+  res <- GET(URLencode(full_url), add_headers("X-auth-token" = api_token))
+  json <- jsonlite::fromJSON(content(res, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+
+  # Poll request
+  host <- "https://squidle.org"
+  res2 <- NULL
+
+  # Print status url
+  print(paste0(host,json$status_url))
+
+  # Initialize progress bar
+  pb <- txtProgressBar(min = 0, max = 100, style = 3)
+  
+  while (TRUE) {
+    # Poll the status URL to check progress
+    res_raw <- GET(URLencode(paste0(host, json$status_url)), add_headers("X-auth-token" = api_token))
+    res1 <- jsonlite::fromJSON(content(res_raw, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+    
+    # Check if server indicates result is available
+    if (res1$result_available || res1$status == "done") {
+      res2 <- GET(URLencode(paste0(host, json$result_url)), add_headers("X-auth-token" = api_token))
+      setTxtProgressBar(pb, 100)  # Set progress to 100% when done
+      break
+    } else if (res1$status == "error") {
+      close(pb)  # Close progress bar on error
+      stop("Error in processing the request.")
+    }
+
+    # Calculate overall progress bases on cumulative iterations
+        stages <- res1$progress
+    total_iterations <- sum(sapply(stages, function(stage) {
+      if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+        stage$iteration_count
+      } else {
+        0
+      }
+    }))
+    
+    completed_iterations <- sum(sapply(stages, function(stage) {
+      if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+        stage$iteration
+      } else {
+        0
+      }
+    }))
+    
+    # Calculate overall progress as a percentage
+    if (total_iterations > 0) {
+      overall_progress <- (completed_iterations / total_iterations) * 100
+    } else {
+      overall_progress <- 0
+    }
+    
+    # Update the progress bar
+    setTxtProgressBar(pb, overall_progress)
+    
+    Sys.sleep(1)  # Wait before polling again to avoid excessive requests
+  }
+  
+  close(pb)  # Close progress bar
+  
+  # Flatten JSON results into a dataframe
+  results_json <- jsonlite::fromJSON(content(res2, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+  
+  return(results_json)
+}
+```
+
+
 # Usage 
 ```{r}
 # Initialize api to handle authentication (using default host)
 api <- SQAPI$new()
 
 # Construct base url (host + endpoint)
-my_url <- base_url(api$host, endpoint = "api/annotation") %>%
+my_url <- base_url(api$host, endpoint = "api/media_collection") %>%
   query_filters(
-    page = "3",
-    results_per_page = "500",
-    list(name = "annotation_set_id", op = "eq", val = "5432") #pass filters as a list for correct formatting
+    name = "media",
+    op = "any",
+    val = list(
+      name = "deployment",
+      op = "has",
+      val = list(
+        name = "campaign",
+        op = "has",
+        val = list(name = "key", op = "eq", val = "Batemans201011")
+      )
+    )
   )
 
 # Send request using authentication from instance of SQAPI
 r <- request(my_url, "GET", api$username, api$auth) 
 
 
+
+```
+
+```{r}
 # parse JSON or handle errors
 if (r$status_code == 200) {
   # Parse the response JSON content
@@ -124,5 +213,4 @@ if (r$status_code == 200) {
   print(httr::content(r, "text", encoding = "UTF-8"))
 }
 ```
-
 
