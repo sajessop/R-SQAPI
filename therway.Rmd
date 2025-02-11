@@ -48,29 +48,30 @@ query_filters <- function(base_url,
                           template = NULL,
                           disposition = NULL,
                           include_columns = NULL,
-                          filters = (list(module = "pandas", method = "json_normalize")), #idk what this is
                           page = NULL,
                           results_per_page = NULL) {
-  
   # Create the filter list and exclude 'val' if NULL
   qfilter <- list(name = name, op = op)
-  if (!is.null(val)) qfilter$val <- val
+  if (!is.null(val))
+    qfilter$val <- val
   
-  # Convert query and filters and include_columns to JSON
+  # Convert query to JSON
   json_query <- jsonlite::toJSON(list(filters = list(qfilter)), auto_unbox = TRUE)
-  json_filters <- jsonlite::toJSON(list(operations = list(filters)), auto_unbox = TRUE)
-  json_include_columns <- jsonlite::toJSON(include_columns, auto_unbox = TRUE)
-  
+  json_include_columns <- if (!is.null(include_columns)) {
+    jsonlite::toJSON(include_columns, auto_unbox = TRUE)
+  }
   # Construct URL using httr::modify_url (automatically removes NULL values)
-  url <- httr::modify_url(base_url, query = list(
-    q = json_query,
-    page = page,
-    results_per_page = results_per_page,
-    template = template,
-    disposition = disposition,
-    include_columns= json_include_columns,
-    f = json_filters
-  ))
+  url <- httr::modify_url(
+    base_url,
+    query = list(
+      q = json_query,
+      page = page,
+      results_per_page = results_per_page,
+      template = template,
+      disposition = disposition,
+      include_columns = json_include_columns
+    )
+  )
   
   return(url)
 }
@@ -157,14 +158,13 @@ request <- function(url, verb, token, poll = TRUE) {
   close(pbar)  # Close progress bar
   
   # Flatten JSON results into a dataframe
-  # results_json <- jsonlite::fromJSON(content(results_response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+  ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
   } else {
-  results_json <- jsonlite::fromJSON(content(response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+  ret_results <- httr::content(response, 'text', encoding = "UTF-8")
   }
   
  cat("Response Status Code:", response$status_code, "\n")
-  # return(results_json)
- return(results_response)
+  return(ret_results)
 }
 ```
 
@@ -177,16 +177,15 @@ library(magrittr)
 # Initialize api to handle authentication (using default host)
 api <- SQAPI$new()
 
-# Construct base url (host + endpoint)
+# Construct base url (host + endpoint) then pipe to query_filters then pipe to request
+
 ## Simple query example
-my_url <- base_url(api$host, endpoint = "api/annotation_set") %>%
-  query_filters(
-    name = "id",
-    op = "eq",
-    val = "2194")
+r1 <- base_url(api$host, endpoint = "api/annotation_set") %>%
+  query_filters(name = "id", op = "eq", val = "2194") %>%
+  request("GET", api$auth, poll = FALSE)
 
 ## Nested query example
-my_url <- base_url(api$host, endpoint = "api/media_collection") %>%
+r2 <- base_url(api$host, endpoint = "api/media_collection") %>%
   query_filters(
     name = "media",
     op = "any",
@@ -199,10 +198,11 @@ my_url <- base_url(api$host, endpoint = "api/media_collection") %>%
         val = list(name = "key", op = "eq", val = "Batemans201011")
       )
     )
-  )
+  ) %>% 
+  request("GET", api$auth, poll = FALSE)
 
 # Export endpoint example 
-my_url <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
+r3 <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
   query_filters(
     name = "events",
     op = "any",
@@ -226,38 +226,35 @@ my_url <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
       "deployment.campaign.id",
       "event_log"
     )
-  )
-
-# Send request using authentication from instance of SQAPI
-## Annotation endpoint example
-r <- request(my_url, "GET", api$auth, poll = TRUE)
+  )%>% 
+  request("GET", api$auth, poll = TRUE)
 
 
 ## TEST: Export endpoint example with polling and status bar
-r <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$auth) 
+rtest <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$auth) 
 
 ```
 
 ```{r}
-# parse JSON or handle errors
-if (r$status_code == 200) {
-  # Parse the response JSON content
-  json_content <- httr::content(r, "text", encoding = "UTF-8")
-  if (nchar(json_content) > 0) {
-    my_list <- jsonlite::fromJSON(json_content, flatten = TRUE)
-    my_df <- as.data.frame(my_list)
-    
-    # Print a preview of the data
-    print("Succesful request")
-    print(head(my_df))
-  } else {
-    print("No data")
-  }
-} else {
-  # Print the error status and message
-  print(paste("Didn't work. Status code:", r$status_code))
-  print("Response content:")
-  print(httr::content(r, "text", encoding = "UTF-8"))
-}
+# # parse JSON or handle errors
+# if (r$status_code == 200) {
+#   # Parse the response JSON content
+#   json_content <- httr::content(r, "text", encoding = "UTF-8")
+#   if (nchar(json_content) > 0) {
+#     my_list <- jsonlite::fromJSON(json_content, flatten = TRUE)
+#     my_df <- as.data.frame(my_list)
+#     
+#     # Print a preview of the data
+#     print("Succesful request")
+#     print(head(my_df))
+#   } else {
+#     print("No data")
+#   }
+# } else {
+#   # Print the error status and message
+#   print(paste("Didn't work. Status code:", r$status_code))
+#   print("Response content:")
+#   print(httr::content(r, "text", encoding = "UTF-8"))
+# }
 ```
 
