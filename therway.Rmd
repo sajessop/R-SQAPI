@@ -46,23 +46,30 @@ query_filters <- function(base_url,
                           op,
                           val = NULL,
                           template = NULL,
+                          disposition = NULL,
+                          include_columns = NULL,
+                          filters = (list(module = "pandas", method = "json_normalize")), #idk what this is
                           page = NULL,
                           results_per_page = NULL) {
   
   # Create the filter list and exclude 'val' if NULL
-  filter <- list(name = name, op = op)
-  if (!is.null(val)) filter$val <- val
+  qfilter <- list(name = name, op = op)
+  if (!is.null(val)) qfilter$val <- val
   
-  # Convert filters to JSON and URL encode
-  json_query <- jsonlite::toJSON(list(filters = list(filter)), auto_unbox = TRUE)
-  # encoded_query <- utils::URLencode(json_query)
+  # Convert query and filters and include_columns to JSON
+  json_query <- jsonlite::toJSON(list(filters = list(qfilter)), auto_unbox = TRUE)
+  json_filters <- jsonlite::toJSON(list(operations = list(filters)), auto_unbox = TRUE)
+  json_include_columns <- jsonlite::toJSON(include_columns, auto_unbox = TRUE)
   
   # Construct URL using httr::modify_url (automatically removes NULL values)
   url <- httr::modify_url(base_url, query = list(
     q = json_query,
     page = page,
     results_per_page = results_per_page,
-    template = template
+    template = template,
+    disposition = disposition,
+    include_columns= json_include_columns,
+    f = json_filters
   ))
   
   return(url)
@@ -73,7 +80,6 @@ query_filters <- function(base_url,
 # Function to make the VERB request with status polling and progress bar
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-## TO DO: tidy up polling for paginated results - currently only works for paginated endpoints if poll = FALSE
 request <- function(url, verb, token, poll = TRUE) {
   response <- httr::VERB(
     verb = verb,
@@ -86,7 +92,8 @@ request <- function(url, verb, token, poll = TRUE) {
     simplifyVector = TRUE,
     flatten = TRUE
   )
-    if (poll){
+
+      if (poll){
   # Poll
   results_response <- NULL
   
@@ -150,13 +157,14 @@ request <- function(url, verb, token, poll = TRUE) {
   close(pbar)  # Close progress bar
   
   # Flatten JSON results into a dataframe
-  results_json <- jsonlite::fromJSON(content(results_response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
+  # results_json <- jsonlite::fromJSON(content(results_response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
   } else {
   results_json <- jsonlite::fromJSON(content(response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
   }
   
  cat("Response Status Code:", response$status_code, "\n")
-  return(results_json)
+  # return(results_json)
+ return(results_response)
 }
 ```
 
@@ -198,14 +206,35 @@ my_url <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
   query_filters(
     name = "events",
     op = "any",
-    val = list(
-      name = "id",
-      op = "is_not_null"
-    ), page = "2", results_per_page = "13")
+    val = list(name = "id", op = "is_not_null"),
+    include_columns = c(
+      "id",
+      "key",
+      "path_best",
+      "timestamp_start",
+      "path_best_thm",
+      "pose.timestamp",
+      "pose.lat",
+      "pose.lon",
+      "pose.alt",
+      "pose.dep",
+      "pose.data",
+      "pose.id",
+      "deployment.key",
+      "deployment.campaign.key",
+      "deployment.id",
+      "deployment.campaign.id",
+      "event_log"
+    )
+  )
 
 # Send request using authentication from instance of SQAPI
 ## Annotation endpoint example
 r <- request(my_url, "GET", api$auth, poll = TRUE)
+
+
+## TEST: Export endpoint example with polling and status bar
+r <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$auth) 
 
 ```
 
