@@ -10,37 +10,24 @@ library(jsonlite)
 
 # Create class SQAPI with property: host 
 ```{r}
-SQAPI <- R6Class(
-  "SQAPI",
-  public = list(
-    host = NULL,
-    username = NULL,
-    auth = NULL,
-    initialize = function(host = NULL) {
-      # Set default host
-      if (is.null(host)){
-        self$host <- "https://squidle.org"
-      } else{
-        self$host <- host
-      }
-      # Check if username and token are already stored in the session
-      if (is.null(getOption("api_username")) ||
-          is.null(getOption("api_token"))) {
-        # If not, ask for them interactively
-        self$username <- readline(prompt = "Enter your username: ")
-        self$auth <- readline(prompt = "Enter your API token: ")
-        
-        # Store them in session for future use in this session
-        options(api_username = self$username,
-                api_token = self$auth)
-      } else {
-        # If they are already stored, use the saved values
-        self$username <- getOption("api_username")
-        self$auth <- getOption("api_token")
-      }
+SQAPI <- R6Class("SQAPI", public = list(
+  host = NULL,
+  auth = NULL,
+  initialize = function(host = NULL) {
+    if (is.null(host)) {
+      self$host <- "https://squidle.org"
+    } else{
+      self$host <- host
     }
-  )
-)
+    
+    if (is.null(getOption("api_token"))) {
+      self$auth <- readline(prompt = "Enter your API token: ")
+      options(api_token = self$auth)
+    } else {
+      self$auth <- getOption("api_token")
+    }
+  }
+))
 ```
 
 # Function to construct host + endpoint
@@ -57,22 +44,27 @@ base_url <- function(host, endpoint){
 query_filters <- function(base_url,
                           name,
                           op,
-                          val,
+                          val = NULL,
+                          template = NULL,
                           page = NULL,
-                          results_per_page = NULL
-                          ) {
-  filters <- list(
-    list(name = name, op = op, val = val)
-  )
-  json_query <- jsonlite::toJSON(list(filters = filters), auto_unbox = TRUE)
+                          results_per_page = NULL) {
   
-  url <- paste0(base_url, "?q=", json_query)
-  if (!is.null(page)) {
-    url <- paste0(url, "&page=", page)
-  }
-  if (!is.null(results_per_page)) {
-    url <- paste0(url, "&results_per_page=", results_per_page)
-  }
+  # Create the filter list and exclude 'val' if NULL
+  filter <- list(name = name, op = op)
+  if (!is.null(val)) filter$val <- val
+  
+  # Convert filters to JSON and URL encode
+  json_query <- jsonlite::toJSON(list(filters = list(filter)), auto_unbox = TRUE)
+  # encoded_query <- utils::URLencode(json_query)
+  
+  # Construct URL using httr::modify_url (automatically removes NULL values)
+  url <- httr::modify_url(base_url, query = list(
+    q = json_query,
+    page = page,
+    results_per_page = results_per_page,
+    template = template
+  ))
+  
   return(url)
 }
 ```
@@ -82,11 +74,11 @@ query_filters <- function(base_url,
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 ## TO DO: tidy up polling for paginated results - currently only works for paginated endpoints if poll = FALSE
-request <- function(url, verb, user, token, poll = TRUE) {
+request <- function(url, verb, token, poll = TRUE) {
   response <- httr::VERB(
     verb = verb,
     url = url,
-    config = httr::authenticate(user = user, password = token)
+    config = httr::add_headers(Authorization = paste("Bearer", token))
   )
   
   json <- jsonlite::fromJSON(
@@ -111,12 +103,12 @@ request <- function(url, verb, user, token, poll = TRUE) {
   
     while (TRUE) {
     # Poll the status URL to check progress
-    status_response <- httr::VERB(verb = verb, url = status_url, config = httr::authenticate(user = user, password = token))
+    status_response <- httr::VERB(verb = verb, url = status_url, config = httr::add_headers(Authorization = paste("Bearer", token)))
     json_status_respones <- jsonlite::fromJSON(content(status_response, 'text', encoding = "UTF-8"), simplifyVector = TRUE, flatten = TRUE)
     
     # Check if server indicates result is available
     if (json_status_respones$result_available || json_status_respones$status == "done") {
-      results_response <- httr::VERB(verb = verb, url = result_url, config = httr::authenticate(user = user, password = token))
+      results_response <- httr::VERB(verb = verb, url = result_url, config = httr::add_headers(Authorization = paste("Bearer", token)))
       setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
       break
     } else if (json_status_respones$status == "error") {
@@ -171,6 +163,9 @@ request <- function(url, verb, user, token, poll = TRUE) {
 
 # Usage 
 ```{r}
+# Lib for pipes
+library(magrittr)
+
 # Initialize api to handle authentication (using default host)
 api <- SQAPI$new()
 
@@ -182,7 +177,7 @@ my_url <- base_url(api$host, endpoint = "api/annotation_set") %>%
     op = "eq",
     val = "2194")
 
-## Nested query
+## Nested query example
 my_url <- base_url(api$host, endpoint = "api/media_collection") %>%
   query_filters(
     name = "media",
@@ -198,13 +193,19 @@ my_url <- base_url(api$host, endpoint = "api/media_collection") %>%
     )
   )
 
+# Export endpoint example 
+my_url <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
+  query_filters(
+    name = "events",
+    op = "any",
+    val = list(
+      name = "id",
+      op = "is_not_null"
+    ), page = "2", results_per_page = "13")
+
 # Send request using authentication from instance of SQAPI
 ## Annotation endpoint example
-### TO DO: fails if poll = TRUE for paginated endpoints (Something to do with json formatting)
-r <- request(my_url, "GET", api$username, api$auth, poll = FALSE)
-
-## Export endpoint example with polling and status bar
-r <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$username, api$auth) 
+r <- request(my_url, "GET", api$auth, poll = TRUE)
 
 ```
 
