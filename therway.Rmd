@@ -45,6 +45,11 @@ query_filters <- function(base_url,
                           name,
                           op,
                           val = NULL,
+                          limit = NULL,
+                          offset = NULL,
+                          order_by = NULL,
+                          group_by = NULL,
+                          single = FALSE,
                           template = NULL,
                           disposition = NULL,
                           include_columns = NULL,
@@ -158,9 +163,11 @@ request <- function(url, verb, token, poll = TRUE) {
   close(pbar)  # Close progress bar
   
   # Flatten JSON results into a dataframe
-  ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
+  #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
+  ret_results <- results_response
   } else {
-  ret_results <- httr::content(response, 'text', encoding = "UTF-8")
+  #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
+  ret_results <- response
   }
   
  cat("Response Status Code:", response$status_code, "\n")
@@ -181,7 +188,7 @@ api <- SQAPI$new()
 
 ## Simple query example
 r1 <- base_url(api$host, endpoint = "api/annotation_set") %>%
-  query_filters(name = "id", op = "eq", val = "2194") %>%
+  query_filters(name = "id", op = "eq", val = "5432", page = "2", results_per_page = "1000") %>%
   request("GET", api$auth, poll = FALSE)
 
 ## Nested query example
@@ -207,6 +214,7 @@ r3 <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
     name = "events",
     op = "any",
     val = list(name = "id", op = "is_not_null"),
+    template = "data.csv",
     include_columns = c(
       "id",
       "key",
@@ -226,9 +234,12 @@ r3 <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
       "deployment.campaign.id",
       "event_log"
     )
-  )%>% 
-  request("GET", api$auth, poll = TRUE)
+  )%>% request("GET", api$auth, poll = TRUE)
 
+
+r4 <-   request(url, "GET", api$auth, poll = TRUE)
+r1 <- GET(r4$url, write_disk("hello.csv", overwrite=TRUE))
+readLines("hello.csv")
 
 ## TEST: Export endpoint example with polling and status bar
 rtest <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$auth) 
