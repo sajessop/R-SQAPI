@@ -241,24 +241,30 @@ request <- function(url, verb, token, filename) {
 Export endpoint function
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-export <- function(url, verb, token, poll = TRUE, filename) {
+## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
+export <- function(url,
+                   verb,
+                   token,
+                   poll = TRUE,
+                   filename,
+                   metadata_filename = "metadata.json") {
   response <- httr::VERB(
     verb = verb,
     url = url,
     config = httr::add_headers(Authorization = paste("Bearer", token)),
     write_disk(filename, overwrite = TRUE)
   )
-
+  
   json <- jsonlite::fromJSON(
     content(response, 'text', encoding = "UTF-8"),
     simplifyVector = TRUE,
     flatten = TRUE
   )
-
+  
   if (poll) {
     # Poll
     results_response <- NULL
-
+    
     # Define urls and print details
     host <- "https://squidle.org"
     status_url <- paste0(host, json$status_url)
@@ -266,12 +272,12 @@ export <- function(url, verb, token, poll = TRUE, filename) {
     print(json$message)
     print(paste0("Status url:", status_url))
     print(paste0("Results url:", result_url))
-
+    
     # Initialize progress bar
     pbar <- txtProgressBar(min = 0,
                            max = 100,
                            style = 3)
-
+    
     while (TRUE) {
       # Poll the status URL to check progress
       status_response <- httr::VERB(
@@ -284,7 +290,7 @@ export <- function(url, verb, token, poll = TRUE, filename) {
         simplifyVector = TRUE,
         flatten = TRUE
       )
-
+      
       # Check if server indicates result is available
       if (json_status_respones$result_available ||
           json_status_respones$status == "done") {
@@ -300,7 +306,7 @@ export <- function(url, verb, token, poll = TRUE, filename) {
         close(pbar)  # Close progress bar on error
         stop("Error in processing the request.")
       }
-
+      
       # Calculate overall progress bases on cumulative iterations
       stages <- json_status_respones$progress
       total_iterations <- sum(sapply(stages, function(stage) {
@@ -310,7 +316,7 @@ export <- function(url, verb, token, poll = TRUE, filename) {
           0
         }
       }))
-
+      
       completed_iterations <- sum(sapply(stages, function(stage) {
         if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
           stage$iteration
@@ -318,46 +324,45 @@ export <- function(url, verb, token, poll = TRUE, filename) {
           0
         }
       }))
-
+      
       # Calculate overall progress as a percentage
       if (total_iterations > 0) {
         overall_progress <- (completed_iterations / total_iterations) * 100
       } else {
         overall_progress <- 0
       }
-
+      
       # Update the progress bar
       setTxtProgressBar(pbar, overall_progress)
-
+      
       Sys.sleep(1)  # Wait before polling again to avoid excessive requests
     }
-
+    
     close(pbar)  # Close progress bar
-
-    # Flatten JSON results into a dataframe
-    #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
+    
+    # Define response objects
     ret_results <- results_response
+    # write metadata if csv
+    if (grepl("data.csv|dataframe.csv", url)) {
+      meta <- ret_results$headers$`x-content-metadata`
+      write(meta, metadata_filename)
+    } else{
+      NULL
+    }
   } else {
-    #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
     ret_results <- response
+    if (grepl("data.csv|dataframe.csv", url)) {
+      meta <- ret_results$headers$`x-content-metadata`
+      write(meta, metadata_filename)
+    }
   }
-
+  
   cat("Response Status Code:", response$status_code, "\n")
   return(ret_results)
 }
 
 ```
 
-```{r}
- r3 <- append_url(api$host,
-                   "api/media_collection/13453/export",
-                   my_filters_3,
-                   my_params_3) %>% export("GET", api$auth, filename = "test3.csv")
-meta <- r3$headers$`x-content-metadata`
-write(meta, "meta.json")
-
-
-```
 
 
 # Updated usage
@@ -453,7 +458,7 @@ api <- SQAPI$new()
   r3 <- append_url(api$host,
                    "api/media_collection/13453/export",
                    my_filters_3,
-                   my_params_3) %>% export("GET", api$auth, filename = "test3.csv")
+                   my_params_3) %>% export("GET", api$auth, filename = "test3.csv", metadata_filename = "my_metadata3.json")
   # Inspect data
   test <- read.csv("test3.csv")
   
@@ -463,6 +468,33 @@ api <- SQAPI$new()
                          my_filters_3,
                          my_params_3)
   cat(URLdecode(my_url_3))
+  
+}
+
+# Example 4 - Get request to export endpoint using status polling and defining limit and offset parameters
+{
+  # Create filters
+  my_filters_4 <- query_filter(
+    name = "events",
+    op = "any",
+    val = query_filter(name = "id", op = "is_not_null")
+  )
+  # Create other params
+  my_params_4 <- query_params(
+    limit = 100, offset = 20
+  )
+  # Append filters and parameters and send request
+  r4 <- append_url(api$host,
+                   "api/media_collection/13453/export",
+                   my_filters_4,
+                   my_params_4) %>% export("GET", api$auth, filename = "test4.json")
+
+  # Look at url
+  my_url_4 <- append_url(api$host,
+                         "api/media_collection/13453/export",
+                         my_filters_4,
+                         my_params_4)
+  cat(URLdecode(my_url_4))
   
 }
 ```
