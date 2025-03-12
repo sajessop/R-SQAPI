@@ -348,6 +348,16 @@ export <- function(url, verb, token, poll = TRUE, filename) {
 
 ```
 
+```{r}
+ r3 <- append_url(api$host,
+                   "api/media_collection/13453/export",
+                   my_filters_3,
+                   my_params_3) %>% export("GET", api$auth, filename = "test3.csv")
+meta <- r3$headers$`x-content-metadata`
+write(meta, "meta.json")
+
+
+```
 
 
 # Updated usage
