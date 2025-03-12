@@ -150,6 +150,7 @@ query_params <- function(template = NULL,
 
 # Function to append query filters and paramaters to url
 ```{r}
+## TO DO: make query_filters default to NULL
 append_url <- function(host,
                        endpoint,
                        query_filters,
@@ -157,8 +158,6 @@ append_url <- function(host,
   # Finalise formatting of filters
   # Wrap in list called "filters"
   filters <- list(filters = list(query_filters))
-  # # Convert to JSON
-  # filters_json <- jsonlite::toJSON(filters, auto_unbox = TRUE)
   
   # Initialise q list
   q <- list()
@@ -198,8 +197,6 @@ append_url <- function(host,
   } else {
     list()
   }
-  # Convert to JSON
-  # qparams_json <- jsonlite::toJSON(qparams, auto_unbox = TRUE)
   
   # Construct url
   base_url <- base_url(host, endpoint)
@@ -213,39 +210,6 @@ append_url <- function(host,
   url <- httr::build_url(url)
   return(url)
 }
-```
-
-```{r}
-my_params <- query_params(
-  page = "14",
-  results_per_page = "56",
-  order_by = c("pose.lat", "asc"),
-  group_by = "key",
-  include_columns = c(
-    "id",
-    "key",
-    "path_best",
-    "timestamp_start",
-    "path_best_thm",
-    "pose.timestamp",
-    "pose.lat",
-    "pose.lon",
-    "pose.alt",
-    "pose.dep",
-    "pose.data",
-    "pose.id",
-    "deployment.key",
-    "deployment.campaign.key",
-    "deployment.id",
-    "deployment.campaign.id",
-    "event_log"
-  ))
-
-# ob <- my_params[[1]]$order_by
-# test_list <- jsonlite::fromJSON(ob, simplifyDataFrame = FALSE)
-test1 <- append_url(api$host, "api/annotation_set", my_filters_2, my_params)
-cat(URLdecode(test1))
-# cat(test1)
 ```
 
 
@@ -276,110 +240,110 @@ request <- function(url, verb, token, filename) {
 
 Export endpoint function
 ```{r}
-# ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-# export <- function(url, verb, token, poll = FALSE) {
-#   response <- httr::VERB(
-#     verb = verb,
-#     url = url,
-#     config = httr::add_headers(Authorization = paste("Bearer", token))
-#   )
-#   
-#   json <- jsonlite::fromJSON(
-#     content(response, 'text', encoding = "UTF-8"),
-#     simplifyVector = TRUE,
-#     flatten = TRUE
-#   )
-#   
-#   if (poll) {
-#     # Poll
-#     results_response <- NULL
-#     
-#     # Define urls and print details
-#     host <- "https://squidle.org"
-#     status_url <- paste0(host, json$status_url)
-#     result_url <- paste0(host, json$result_url)
-#     print(json$message)
-#     print(paste0("Status url:", status_url))
-#     print(paste0("Results url:", result_url))
-#     
-#     # Initialize progress bar
-#     pbar <- txtProgressBar(min = 0,
-#                            max = 100,
-#                            style = 3)
-#     
-#     while (TRUE) {
-#       # Poll the status URL to check progress
-#       status_response <- httr::VERB(
-#         verb = verb,
-#         url = status_url,
-#         config = httr::add_headers(Authorization = paste("Bearer", token))
-#       )
-#       json_status_respones <- jsonlite::fromJSON(
-#         content(status_response, 'text', encoding = "UTF-8"),
-#         simplifyVector = TRUE,
-#         flatten = TRUE
-#       )
-#       
-#       # Check if server indicates result is available
-#       if (json_status_respones$result_available ||
-#           json_status_respones$status == "done") {
-#         results_response <- httr::VERB(
-#           verb = verb,
-#           url = result_url,
-#           write_disk("content_values.csv", overwrite = TRUE),
-#           config = httr::add_headers(Authorization = paste("Bearer", token))
-#         )
-#         setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
-#         break
-#       } else if (json_status_respones$status == "error") {
-#         close(pbar)  # Close progress bar on error
-#         stop("Error in processing the request.")
-#       }
-#       
-#       # Calculate overall progress bases on cumulative iterations
-#       stages <- json_status_respones$progress
-#       total_iterations <- sum(sapply(stages, function(stage) {
-#         if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-#           stage$iteration_count
-#         } else {
-#           0
-#         }
-#       }))
-#       
-#       completed_iterations <- sum(sapply(stages, function(stage) {
-#         if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-#           stage$iteration
-#         } else {
-#           0
-#         }
-#       }))
-#       
-#       # Calculate overall progress as a percentage
-#       if (total_iterations > 0) {
-#         overall_progress <- (completed_iterations / total_iterations) * 100
-#       } else {
-#         overall_progress <- 0
-#       }
-#       
-#       # Update the progress bar
-#       setTxtProgressBar(pbar, overall_progress)
-#       
-#       Sys.sleep(1)  # Wait before polling again to avoid excessive requests
-#     }
-#     
-#     close(pbar)  # Close progress bar
-#     
-#     # Flatten JSON results into a dataframe
-#     #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
-#     ret_results <- results_response
-#   } else {
-#     #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
-#     ret_results <- response
-#   }
-#   
-#   cat("Response Status Code:", response$status_code, "\n")
-#   return(ret_results)
-# }
+## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
+export <- function(url, verb, token, poll = FALSE) {
+  response <- httr::VERB(
+    verb = verb,
+    url = url,
+    config = httr::add_headers(Authorization = paste("Bearer", token))
+  )
+
+  json <- jsonlite::fromJSON(
+    content(response, 'text', encoding = "UTF-8"),
+    simplifyVector = TRUE,
+    flatten = TRUE
+  )
+
+  if (poll) {
+    # Poll
+    results_response <- NULL
+
+    # Define urls and print details
+    host <- "https://squidle.org"
+    status_url <- paste0(host, json$status_url)
+    result_url <- paste0(host, json$result_url)
+    print(json$message)
+    print(paste0("Status url:", status_url))
+    print(paste0("Results url:", result_url))
+
+    # Initialize progress bar
+    pbar <- txtProgressBar(min = 0,
+                           max = 100,
+                           style = 3)
+
+    while (TRUE) {
+      # Poll the status URL to check progress
+      status_response <- httr::VERB(
+        verb = verb,
+        url = status_url,
+        config = httr::add_headers(Authorization = paste("Bearer", token))
+      )
+      json_status_respones <- jsonlite::fromJSON(
+        content(status_response, 'text', encoding = "UTF-8"),
+        simplifyVector = TRUE,
+        flatten = TRUE
+      )
+
+      # Check if server indicates result is available
+      if (json_status_respones$result_available ||
+          json_status_respones$status == "done") {
+        results_response <- httr::VERB(
+          verb = verb,
+          url = result_url,
+          write_disk("content_values.csv", overwrite = TRUE),
+          config = httr::add_headers(Authorization = paste("Bearer", token))
+        )
+        setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
+        break
+      } else if (json_status_respones$status == "error") {
+        close(pbar)  # Close progress bar on error
+        stop("Error in processing the request.")
+      }
+
+      # Calculate overall progress bases on cumulative iterations
+      stages <- json_status_respones$progress
+      total_iterations <- sum(sapply(stages, function(stage) {
+        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+          stage$iteration_count
+        } else {
+          0
+        }
+      }))
+
+      completed_iterations <- sum(sapply(stages, function(stage) {
+        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+          stage$iteration
+        } else {
+          0
+        }
+      }))
+
+      # Calculate overall progress as a percentage
+      if (total_iterations > 0) {
+        overall_progress <- (completed_iterations / total_iterations) * 100
+      } else {
+        overall_progress <- 0
+      }
+
+      # Update the progress bar
+      setTxtProgressBar(pbar, overall_progress)
+
+      Sys.sleep(1)  # Wait before polling again to avoid excessive requests
+    }
+
+    close(pbar)  # Close progress bar
+
+    # Flatten JSON results into a dataframe
+    #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
+    ret_results <- results_response
+  } else {
+    #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
+    ret_results <- response
+  }
+
+  cat("Response Status Code:", response$status_code, "\n")
+  return(ret_results)
+}
 
 ```
 
@@ -393,28 +357,28 @@ api <- SQAPI$new()
 
 # Construct base url (host + endpoint) then pipe to query_filters then pipe to request
 
-## Simple query example
-my_url <- base_url(api$host, endpoint = "api/annotation_set") %>%
-  query_filters(name = "id", op = "eq", val = "5432", page = "2", results_per_page = "1000") #%>%
-  
-r1 <- request(my_url, "GET", api$auth)
-
-## Nested query example
-r2 <- base_url(api$host, endpoint = "api/media_collection") %>%
-  query_filters(
-    name = "media",
-    op = "any",
-    val = list(
-      name = "deployment",
-      op = "has",
-      val = list(
-        name = "campaign",
-        op = "has",
-        val = list(name = "key", op = "eq", val = "Batemans201011")
-      )
-    )
-  ) %>% 
-  request(verb = "GET", token = api$auth, filename = "testing.json")
+# ## Simple query example
+# my_url <- base_url(api$host, endpoint = "api/annotation_set") %>%
+#   query_filters(name = "id", op = "eq", val = "5432", page = "2", results_per_page = "1000") #%>%
+#   
+# r1 <- request(my_url, "GET", api$auth)
+# 
+# ## Nested query example
+# r2 <- base_url(api$host, endpoint = "api/media_collection") %>%
+#   query_filters(
+#     name = "media",
+#     op = "any",
+#     val = list(
+#       name = "deployment",
+#       op = "has",
+#       val = list(
+#         name = "campaign",
+#         op = "has",
+#         val = list(name = "key", op = "eq", val = "Batemans201011")
+#       )
+#     )
+#   ) %>% 
+#   request(verb = "GET", token = api$auth, filename = "testing.json")
 
 # Export endpoint example 
 r3 <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
@@ -445,9 +409,6 @@ r3 <- base_url(api$host, endpoint = "api/media_collection/13453/export") %>%
   )%>% export("GET", api$auth, poll = TRUE)
 
 
-testing <- VERB("GET", r3$url, write_disk("hello1.csv", overwrite=TRUE))
-readLines("hello1.csv")
-
 ## TEST: Export endpoint example with polling and status bar
 rtest <- request("https://squidle.org/api/annotation_set/2194/export", "GET", api$auth) 
 
@@ -461,9 +422,22 @@ library(magrittr)
 # Initialize api to handle authentication (using default host)
 api <- SQAPI$new()
 
-# Example 1
+# Example 0 - A simple query 
+{
+# Create filters
+my_filters <- query_filter(name = "id", op = "eq", val = "5432")
+# Append filters and send request
+r <- append_url(api$host, "api/annotation_set", my_filters) %>% request("GET", api$auth, "test.json")
+
+# look at url
+my_url <- append_url(api$host, "api/annotation_set", my_filters)
+cat(URLdecode(my_url))
+}
+
+# Example 1 - A nested query to Get all media_collections that contain media from a specific campaign matching the key "Batemans201011"
+{
 # Create filters (nested)
-my_filters <- query_filter(
+my_filters1 <- query_filter(
   name = "media",
   op = "any",
   val = query_filter(
@@ -477,37 +451,31 @@ my_filters <- query_filter(
   )
 )
 # Append filters and send request
-my_url <- append_url(api$host, "api/media_collection", my_filters) #%>% request("GET", api$auth, "test.json")
+r1 <- append_url(api$host, "api/media_collection", my_filters1) %>% request("GET", api$auth, "test1.json")
 
+# look at url
+my_url1 <- append_url(api$host, "api/media_collection", my_filters1)
+cat(URLdecode(my_url1))
+}
 
-# Example 2
-my_filters_2 <- query_filter(name = "id", op = "eq", val = "5432")
-my_params <- query_params(
+# Example 2 - A simple query to Get all annotations that match annotation_set_id = 5432 and specify pagination params
+{
+# Create filters
+my_filters_2 <- query_filter(name = "annotation_set_id", op = "eq", val = "5432")
+# Create other parameters
+my_params_2 <- query_params(
   page = "14",
-  results_per_page = "56",
-  order_by = c("pose.lat", "asc"),
-  group_by = "key",
-  include_columns = c(
-    "id",
-    "key",
-    "path_best",
-    "timestamp_start",
-    "path_best_thm",
-    "pose.timestamp",
-    "pose.lat",
-    "pose.lon",
-    "pose.alt",
-    "pose.dep",
-    "pose.data",
-    "pose.id",
-    "deployment.key",
-    "deployment.campaign.key",
-    "deployment.id",
-    "deployment.campaign.id",
-    "event_log"
-  ))
-test1 <- append_url(api$host, "api/annotation_set", my_filters_2, my_params) #%>% request("GET", api$auth, "test.json")
-  
+  results_per_page = "56"
+  )
+# Append filters and parameters and send request
+r2 <- append_url(api$host, "api/annotation", my_filters_2, my_params_2) %>% request("GET", api$auth, "test2.json")
+# look at url
+my_url2 <- append_url(api$host, "api/annotation", my_filters_2, my_params_2)
+cat(URLdecode(my_url2))
+}
+
+# Example 3
+
 ```
 
 
