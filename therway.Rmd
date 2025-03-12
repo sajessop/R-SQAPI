@@ -241,20 +241,15 @@ request <- function(url, verb, token, filename) {
     config = httr::add_headers(Authorization = paste("Bearer", token)),
     write_disk(filename, overwrite = TRUE)
   )
-  # if (response$status_code <= 299 && response$headers$`content-type` == "application/json") {
-  #   # json <- jsonlite::fromJSON(
-  #   #   content(response, 'text', encoding = "UTF-8"),
-  #   #   simplifyVector = TRUE,
-  #   #   flatten = TRUE
-  #   # )
-  #   ret_results <- response
-  #   cat("Response Status Code:")
-  #   print(response$status_code)
-  # } else{
-    cat("Response Status Code:")
-    print(response$status_code)
-    ret_results <- response
-  # }
+  
+  # Print status
+  cat("Response Status Code:")
+  print(response$status_code)
+  
+  ret_results <- response
+  
+  # Print response object
+  print(ret_results)
   return(ret_results)
 }
 ```
@@ -374,18 +369,28 @@ export <- function(url,
     if (grepl("data.csv|dataframe.csv", url)) {
       meta <- ret_results$headers$`x-content-metadata`
       write(meta, metadata_filename)
+      #Print metadata message
+      cat("See metadata file:")
+      print(metadata_filename)
     } else{
       NULL
     }
+    # Print response object
+    print(ret_results)
   } else {
     ret_results <- response
     if (grepl("data.csv|dataframe.csv", url)) {
       meta <- ret_results$headers$`x-content-metadata`
       write(meta, metadata_filename)
+      #Print metadata message
+      cat("See metadata file:")
+      print(metadata_filename)
     }
+    # Print response object
+    print(ret_results)
   }
   
-  cat("Response Status Code:", response$status_code, "\n")
+  cat("\n", "Response Status Code:", response$status_code, "\n")
   return(ret_results)
 }
 
@@ -490,8 +495,8 @@ api <- SQAPI$new()
                    my_params_3) %>% export("GET", api$auth, filename = "test3.csv", metadata_filename = "my_metadata3.json")
   # Inspect data
   test3 <- read.csv("test3.csv")
-  
-  # Look at url
+
+    # Look at url
   my_url_3 <- append_url(api$host,
                          "api/media_collection/13453/export",
                          my_filters_3,
@@ -577,8 +582,7 @@ api <- SQAPI$new()
 }
 
 # Can also use append_url to combine just base url and endpoint 
-simple_url <- append_url(host = api$host, endpoint = "api/annotation/5432") %>% request("GET", api$auth, filename = "test.json")
-#cat(simple_url)}
+simple_url <- append_url(host = api$host, endpoint = "api/annotation/5432") %>% request("GET", api$auth, filename = "simple.json")
 ```
 
 
