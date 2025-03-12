@@ -40,6 +40,7 @@ base_url <- function(host, endpoint){
 ```
 
 # Function to make query filters
+# accepts name, op, val as strings - see API for details on fields
 ```{r}
 query_filter <- function(name,
                           op,
@@ -55,6 +56,11 @@ query_filter <- function(name,
 ```
 
 # Function to make query parameters
+# template, disposition, include_columns, page, results_per_page are input as strings
+# limit and offset are input as intergers
+# group by is input as a string 
+# order by is input as a vector containing two elements the first being the field and the second being direction (either "asc" or "desc")
+# single is a boolean representing whether a single result is expected (I have not tested this)
 ```{r}
 query_params <- function(template = NULL,
                          disposition = NULL,
@@ -149,12 +155,17 @@ query_params <- function(template = NULL,
 
 
 # Function to append query filters and paramaters to url
+# input host as <nameofapiinstance>$host
+# input endpoint as a string
+# input query_filers and query_parameters as the *exact* output from the functions used to create them 
 ```{r}
 ## TO DO: make query_filters default to NULL
 append_url <- function(host,
                        endpoint,
-                       query_filters,
+                       query_filters = NULL,
                        query_parameters = NULL) {
+  
+  if (!is.null(query_filters)){
   # Finalise formatting of filters
   # Wrap in list called "filters"
   filters <- list(filters = list(query_filters))
@@ -188,7 +199,6 @@ append_url <- function(host,
   # Convert to JSON
   combined_q_json <- jsonlite::toJSON(combined_q, auto_unbox = TRUE)
   
-  
   #Finalise formatting of qparams
   qparams <- if (!is.null(query_parameters) &&
                  length(query_parameters) > 1 &&
@@ -208,12 +218,20 @@ append_url <- function(host,
     url$query <- c(url$query, qparams)
   }
   url <- httr::build_url(url)
+  
+  } else {
+    url <- base_url(host, endpoint)
+  }
   return(url)
 }
 ```
 
 
 # Function to make the VERB request to non export endpoint
+# Can pipe url in from append_url function
+# input verb as string eg "GET"
+# input token as <nameofapiinstance>$auth
+# filename as string ensuring file extenstion matched specified template (or the default json)
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 request <- function(url, verb, token, filename) {
@@ -223,22 +241,32 @@ request <- function(url, verb, token, filename) {
     config = httr::add_headers(Authorization = paste("Bearer", token)),
     write_disk(filename, overwrite = TRUE)
   )
-  
-  json <- jsonlite::fromJSON(
-    content(response, 'text', encoding = "UTF-8"),
-    simplifyVector = TRUE,
-    flatten = TRUE
-  )
-      
-  ret_results <- response
-  
- cat("Response Status Code:", response$status_code, "\n")
+  # if (response$status_code <= 299 && response$headers$`content-type` == "application/json") {
+  #   # json <- jsonlite::fromJSON(
+  #   #   content(response, 'text', encoding = "UTF-8"),
+  #   #   simplifyVector = TRUE,
+  #   #   flatten = TRUE
+  #   # )
+  #   ret_results <- response
+  #   cat("Response Status Code:")
+  #   print(response$status_code)
+  # } else{
+    cat("Response Status Code:")
+    print(response$status_code)
+    ret_results <- response
+  # }
   return(ret_results)
 }
 ```
 
 
-Export endpoint function
+# Function to make the VERB request to export endpoint
+# Can pipe url in from append_url function
+# input verb as string eg "GET"
+# input token as <nameofapiinstance>$auth
+# poll=TRUE for export endpoints
+# filename as string ensuring file extenstion matched specified template (or the default json)
+# metadata_filename as string - only need if template has been set as data.csv or dataframe.csv
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 ## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
@@ -371,6 +399,7 @@ export <- function(url,
 library(magrittr)
 
 # Initialize api to handle authentication (using default host)
+## Will prompt for token in console
 api <- SQAPI$new()
 
 # Example 0 - A simple query
@@ -460,7 +489,7 @@ api <- SQAPI$new()
                    my_filters_3,
                    my_params_3) %>% export("GET", api$auth, filename = "test3.csv", metadata_filename = "my_metadata3.json")
   # Inspect data
-  test <- read.csv("test3.csv")
+  test3 <- read.csv("test3.csv")
   
   # Look at url
   my_url_3 <- append_url(api$host,
@@ -497,6 +526,59 @@ api <- SQAPI$new()
   cat(URLdecode(my_url_4))
   
 }
+
+# Example 5 - Get request to export endpoint using status polling and template = data.csv to download the data as a .csv with order_by
+{
+  # Create filters
+  my_filters_5 <- query_filter(
+    name = "events",
+    op = "any",
+    val = query_filter(name = "id", op = "is_not_null")
+  )
+  # Create other params
+  my_params_5 <- query_params(
+    template = "data.csv",
+    order_by = c("pose.dep", "asc"),
+    include_columns = c(
+      "id",
+      "key",
+      "path_best",
+      "timestamp_start",
+      "path_best_thm",
+      "pose.timestamp",
+      "pose.lat",
+      "pose.lon",
+      "pose.alt",
+      "pose.dep",
+      "pose.data",
+      "pose.id",
+      "deployment.key",
+      "deployment.campaign.key",
+      "deployment.id",
+      "deployment.campaign.id",
+      "event_log"
+    )
+  )
+  # Append filters and parameters and send request
+  r5 <- append_url(api$host,
+                   "api/media_collection/13453/export",
+                   my_filters_5,
+                   my_params_5) %>% export("GET", api$auth, filename = "test5.csv", metadata_filename = "my_metadata5.json")
+  # Inspect data
+  test5 <- read.csv("test5.csv")
+  
+  # Look at url
+  my_url_5 <- append_url(api$host,
+                         "api/media_collection/13453/export",
+                         my_filters_5,
+                         my_params_5)
+  cat(URLdecode(my_url_5))
+  
+}
+
+# Can also use append_url to combine just base url and endpoint 
+simple_url <- append_url(host = api$host, endpoint = "api/annotation/5432") %>% request("GET", api$auth, filename = "test.json")
+#cat(simple_url)}
 ```
 
 
