@@ -30,7 +30,8 @@ SQAPI <- R6Class("SQAPI", public = list(
 ))
 ```
 
-# Function to construct host + endpoint
+
+# Helper function to construct host + endpoint
 ```{r}
 base_url <- function(host, endpoint){
   url <- paste0(host,"/", endpoint)
@@ -53,69 +54,200 @@ query_filter <- function(name,
 }
 ```
 
-
+# Function to make query parameters
 ```{r}
-append_filters <- function(host, endpoint, query_filters) {
+query_params <- function(template = NULL,
+                         disposition = NULL,
+                         include_columns = NULL,
+                         page = NULL,
+                         results_per_page = NULL,
+                         limit = NULL,
+                         offset = NULL,
+                         order_by = NULL,
+                         group_by = NULL,
+                         single = FALSE) {
+  qparams <- list()
+  q <- list()
+
+# Append to q list (parameters inside the q={} json string)  
   
-  # Finalise formatting of query filters
+  # Handle 'order_by' as a character vector (e.g., c("field1", "asc"))
+  json_order_by <- if (!is.null(order_by)) {
+    # Check if order_by is a character vector with exactly two elements (field and direction)
+    if (length(order_by) != 2 || !is.character(order_by)) {
+      stop(
+        "ERROR: order_by must be a character vector with exactly 2 elements, e.g., c('<fieldname>', '<order>')"
+      )
+    }
+    order_by <- list(list(field = order_by[1], direction = order_by[2]))
+    jsonlite::toJSON(order_by, auto_unbox = TRUE)
+  } else {
+    NULL
+  }
+  if (!is.null(json_order_by)) {
+    q$order_by <- json_order_by
+  }
+  
+  # Handle 'group_by' as a single field or a vector of fields
+  json_group_by <- if (!is.null(group_by)) {
+    if (is.character(group_by)) {
+      # If it's a single field (string), make it a list
+      group_by <- list(list(field = group_by))
+    } else if (is.character(group_by) && length(group_by) > 1) {
+      # If it's a vector of fields, process each field
+      group_by <- lapply(group_by, function(x)
+        list(field = x))
+    } else {
+      stop("ERROR: group_by must be a string or a character vector of field names.")
+    }
+    jsonlite::toJSON(group_by, auto_unbox = TRUE)
+  } else {
+    NULL
+  }
+  if (!is.null(json_group_by)) {
+    q$group_by <- json_group_by
+  }
+  
+  # Handle others 
+    if (!is.null(limit)) {
+    q$limit <- limit
+  }
+  if (!is.null(offset)) {
+    q$offset <- offset
+  }
+  if (!is.null(single) && single) {
+    q$single <- TRUE
+  }
+  
+# Append to qparams list (parameters outside the q={} json string)    
+   # Handle include columns vector and convert to json
+  json_include_columns <- if (!is.null(include_columns)) {
+    jsonlite::toJSON(include_columns, auto_unbox = TRUE)
+  } else {
+    NULL
+  }
+  if (!is.null(json_include_columns)) {
+    qparams$include_columns <- json_include_columns
+  }
+  
+  # Add other parameters to the qparams list if not NULL
+  if (!is.null(template)) {
+    qparams$template <- template
+  }
+  if (!is.null(disposition)) {
+    qparams$disposition <- disposition
+  }
+  if (!is.null(page)) {
+    qparams$page <- page
+  }
+  if (!is.null(results_per_page)) {
+    qparams$results_per_page <- results_per_page
+  }
+  return(list(q, qparams))
+}
+```
+
+
+# Function to append query filters and paramaters to url
+```{r}
+append_url <- function(host,
+                       endpoint,
+                       query_filters,
+                       query_parameters = NULL) {
+  # Finalise formatting of filters
   # Wrap in list called "filters"
   filters <- list(filters = list(query_filters))
+  # # Convert to JSON
+  # filters_json <- jsonlite::toJSON(filters, auto_unbox = TRUE)
+  
+  # Initialise q list
+  q <- list()
+  #Finalise formatting of remaining query string (q)
+  if (!is.null(query_parameters) &&
+      length(query_parameters[[1]]) > 0)
+  {
+    if (!is.null(query_parameters[[1]]$order_by)) {
+      q$order_by <- jsonlite::fromJSON(query_parameters[[1]]$order_by, simplifyDataFrame = FALSE)
+    }
+    if (!is.null(query_parameters[[1]]$group_by)) {
+      q$group_by <- jsonlite::fromJSON(query_parameters[[1]]$group_by, simplifyDataFrame = FALSE)
+    }
+    if (!is.null(query_parameters[[1]]$limit)) {
+      q$limit <- query_parameters[[1]]$limit
+    }
+    if (!is.null(query_parameters[[1]]$offset)) {
+      q$offset <- query_parameters[[1]]$offset
+    }
+    if (!is.null(query_parameters[[1]]$single)) {
+      q$single <- query_parameters[[1]]$single
+    }
+  }
+  
+  # combine filters and q and convert to json
+  combined_q <- c(filters, q)
+  
   # Convert to JSON
-  json_query <- jsonlite::toJSON(filters, auto_unbox = TRUE)
+  combined_q_json <- jsonlite::toJSON(combined_q, auto_unbox = TRUE)
+  
+  
+  #Finalise formatting of qparams
+  qparams <- if (!is.null(query_parameters) &&
+                 length(query_parameters) > 1 &&
+                 length(query_parameters[[2]]) > 0) {
+    query_parameters[[2]]
+  } else {
+    list()
+  }
+  # Convert to JSON
+  # qparams_json <- jsonlite::toJSON(qparams, auto_unbox = TRUE)
   
   # Construct url
   base_url <- base_url(host, endpoint)
   url <- httr::parse_url(base_url)
-   url$query <- list(q = json_query)
-   url <- build_url(url)
-  return(url)
-}
-```
-
-
-# OLD
-```{r}
-## TO DO: add limit, offset, order_by, group_by, single params, AND hybrid attributes
-query_filters <- function(base_url,
-                          name,
-                          op,
-                          val = NULL,
-                          limit = NULL,
-                          offset = NULL,
-                          order_by = NULL,
-                          group_by = NULL,
-                          single = FALSE,
-                          template = NULL,
-                          disposition = NULL,
-                          include_columns = NULL,
-                          page = NULL,
-                          results_per_page = NULL) {
-  # Create the filter list and exclude 'val' if NULL
-  qfilter <- list(name = name, op = op)
-  if (!is.null(val))
-    qfilter$val <- val
   
-  # Convert query to JSON
-  json_query <- jsonlite::toJSON(list(filters = list(qfilter)), auto_unbox = TRUE)
-  json_include_columns <- if (!is.null(include_columns)) {
-    jsonlite::toJSON(include_columns, auto_unbox = TRUE)
+  #Append filters and parameters
+  url$query <- list(q = combined_q_json)
+  if (length(qparams) > 0) {
+    url$query <- c(url$query, qparams)
   }
-  # Construct URL using httr::modify_url (automatically removes NULL values)
-  url <- httr::modify_url(
-    base_url,
-    query = list(
-      q = json_query,
-      page = page,
-      results_per_page = results_per_page,
-      template = template,
-      disposition = disposition,
-      include_columns = json_include_columns
-    )
-  )
-  
+  url <- httr::build_url(url)
   return(url)
 }
 ```
+
+```{r}
+my_params <- query_params(
+  page = "14",
+  results_per_page = "56",
+  order_by = c("pose.lat", "asc"),
+  group_by = "key",
+  include_columns = c(
+    "id",
+    "key",
+    "path_best",
+    "timestamp_start",
+    "path_best_thm",
+    "pose.timestamp",
+    "pose.lat",
+    "pose.lon",
+    "pose.alt",
+    "pose.dep",
+    "pose.data",
+    "pose.id",
+    "deployment.key",
+    "deployment.campaign.key",
+    "deployment.id",
+    "deployment.campaign.id",
+    "event_log"
+  ))
+
+# ob <- my_params[[1]]$order_by
+# test_list <- jsonlite::fromJSON(ob, simplifyDataFrame = FALSE)
+test1 <- append_url(api$host, "api/annotation_set", my_filters_2, my_params)
+cat(URLdecode(test1))
+# cat(test1)
+```
+
 
 # Function to make the VERB request to non export endpoint
 ```{r}
@@ -141,127 +273,117 @@ request <- function(url, verb, token, filename) {
 }
 ```
 
-```{r}
-test <- httr::VERB("GET", "https://squidle.org/api/annotation_set?q=%7B%22filters%22%3A%5B%7B%22name%22%3A%22id%22%2C%22op%22%3A%22eq%22%2C%22val%22%3A%225432%22%7D%5D%7D&page=2&results_per_page=1000", config = httr::add_headers(Authorization = paste("Bearer", api$auth)), write_disk("test_content_values.json", overwrite = TRUE))
-
-  json <- jsonlite::fromJSON(
-    content(test, 'text', encoding = "UTF-8"),
-    simplifyVector = TRUE,
-    flatten = TRUE
-  )
-```
-
 
 Export endpoint function
 ```{r}
-## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-export <- function(url, verb, token, poll = FALSE) {
-  response <- httr::VERB(
-    verb = verb,
-    url = url,
-    config = httr::add_headers(Authorization = paste("Bearer", token))
-  )
-  
-  json <- jsonlite::fromJSON(
-    content(response, 'text', encoding = "UTF-8"),
-    simplifyVector = TRUE,
-    flatten = TRUE
-  )
-  
-  if (poll) {
-    # Poll
-    results_response <- NULL
-    
-    # Define urls and print details
-    host <- "https://squidle.org"
-    status_url <- paste0(host, json$status_url)
-    result_url <- paste0(host, json$result_url)
-    print(json$message)
-    print(paste0("Status url:", status_url))
-    print(paste0("Results url:", result_url))
-    
-    # Initialize progress bar
-    pbar <- txtProgressBar(min = 0,
-                           max = 100,
-                           style = 3)
-    
-    while (TRUE) {
-      # Poll the status URL to check progress
-      status_response <- httr::VERB(
-        verb = verb,
-        url = status_url,
-        config = httr::add_headers(Authorization = paste("Bearer", token))
-      )
-      json_status_respones <- jsonlite::fromJSON(
-        content(status_response, 'text', encoding = "UTF-8"),
-        simplifyVector = TRUE,
-        flatten = TRUE
-      )
-      
-      # Check if server indicates result is available
-      if (json_status_respones$result_available ||
-          json_status_respones$status == "done") {
-        results_response <- httr::VERB(
-          verb = verb,
-          url = result_url,
-          write_disk("content_values.csv", overwrite = TRUE),
-          config = httr::add_headers(Authorization = paste("Bearer", token))
-        )
-        setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
-        break
-      } else if (json_status_respones$status == "error") {
-        close(pbar)  # Close progress bar on error
-        stop("Error in processing the request.")
-      }
-      
-      # Calculate overall progress bases on cumulative iterations
-      stages <- json_status_respones$progress
-      total_iterations <- sum(sapply(stages, function(stage) {
-        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-          stage$iteration_count
-        } else {
-          0
-        }
-      }))
-      
-      completed_iterations <- sum(sapply(stages, function(stage) {
-        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-          stage$iteration
-        } else {
-          0
-        }
-      }))
-      
-      # Calculate overall progress as a percentage
-      if (total_iterations > 0) {
-        overall_progress <- (completed_iterations / total_iterations) * 100
-      } else {
-        overall_progress <- 0
-      }
-      
-      # Update the progress bar
-      setTxtProgressBar(pbar, overall_progress)
-      
-      Sys.sleep(1)  # Wait before polling again to avoid excessive requests
-    }
-    
-    close(pbar)  # Close progress bar
-    
-    # Flatten JSON results into a dataframe
-    #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
-    ret_results <- results_response
-  } else {
-    #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
-    ret_results <- response
-  }
-  
-  cat("Response Status Code:", response$status_code, "\n")
-  return(ret_results)
-}
+# ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
+# export <- function(url, verb, token, poll = FALSE) {
+#   response <- httr::VERB(
+#     verb = verb,
+#     url = url,
+#     config = httr::add_headers(Authorization = paste("Bearer", token))
+#   )
+#   
+#   json <- jsonlite::fromJSON(
+#     content(response, 'text', encoding = "UTF-8"),
+#     simplifyVector = TRUE,
+#     flatten = TRUE
+#   )
+#   
+#   if (poll) {
+#     # Poll
+#     results_response <- NULL
+#     
+#     # Define urls and print details
+#     host <- "https://squidle.org"
+#     status_url <- paste0(host, json$status_url)
+#     result_url <- paste0(host, json$result_url)
+#     print(json$message)
+#     print(paste0("Status url:", status_url))
+#     print(paste0("Results url:", result_url))
+#     
+#     # Initialize progress bar
+#     pbar <- txtProgressBar(min = 0,
+#                            max = 100,
+#                            style = 3)
+#     
+#     while (TRUE) {
+#       # Poll the status URL to check progress
+#       status_response <- httr::VERB(
+#         verb = verb,
+#         url = status_url,
+#         config = httr::add_headers(Authorization = paste("Bearer", token))
+#       )
+#       json_status_respones <- jsonlite::fromJSON(
+#         content(status_response, 'text', encoding = "UTF-8"),
+#         simplifyVector = TRUE,
+#         flatten = TRUE
+#       )
+#       
+#       # Check if server indicates result is available
+#       if (json_status_respones$result_available ||
+#           json_status_respones$status == "done") {
+#         results_response <- httr::VERB(
+#           verb = verb,
+#           url = result_url,
+#           write_disk("content_values.csv", overwrite = TRUE),
+#           config = httr::add_headers(Authorization = paste("Bearer", token))
+#         )
+#         setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
+#         break
+#       } else if (json_status_respones$status == "error") {
+#         close(pbar)  # Close progress bar on error
+#         stop("Error in processing the request.")
+#       }
+#       
+#       # Calculate overall progress bases on cumulative iterations
+#       stages <- json_status_respones$progress
+#       total_iterations <- sum(sapply(stages, function(stage) {
+#         if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+#           stage$iteration_count
+#         } else {
+#           0
+#         }
+#       }))
+#       
+#       completed_iterations <- sum(sapply(stages, function(stage) {
+#         if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
+#           stage$iteration
+#         } else {
+#           0
+#         }
+#       }))
+#       
+#       # Calculate overall progress as a percentage
+#       if (total_iterations > 0) {
+#         overall_progress <- (completed_iterations / total_iterations) * 100
+#       } else {
+#         overall_progress <- 0
+#       }
+#       
+#       # Update the progress bar
+#       setTxtProgressBar(pbar, overall_progress)
+#       
+#       Sys.sleep(1)  # Wait before polling again to avoid excessive requests
+#     }
+#     
+#     close(pbar)  # Close progress bar
+#     
+#     # Flatten JSON results into a dataframe
+#     #ret_results <- httr::content(results_response, 'text', encoding = "UTF-8")
+#     ret_results <- results_response
+#   } else {
+#     #ret_results <- httr::content(response, 'text', encoding = "UTF-8") #### lose header info here, need to return the response object
+#     ret_results <- response
+#   }
+#   
+#   cat("Response Status Code:", response$status_code, "\n")
+#   return(ret_results)
+# }
 
 ```
 
-# Usage 
+# Usage OLD
 ```{r}
 # Lib for pipes
 library(magrittr)
@@ -339,7 +461,8 @@ library(magrittr)
 # Initialize api to handle authentication (using default host)
 api <- SQAPI$new()
 
-
+# Example 1
+# Create filters (nested)
 my_filters <- query_filter(
   name = "media",
   op = "any",
@@ -353,38 +476,38 @@ my_filters <- query_filter(
     )
   )
 )
+# Append filters and send request
+my_url <- append_url(api$host, "api/media_collection", my_filters) #%>% request("GET", api$auth, "test.json")
 
-json_query <- jsonlite::toJSON(test_json_query, auto_unbox = TRUE)
-# Output the final JSON query
-print(json_query)
-print(test_json_query)
 
-test_url <- append_filters(api$host, "api/media_collection", my_filters)
-cat(URLdecode(test_url))
+# Example 2
+my_filters_2 <- query_filter(name = "id", op = "eq", val = "5432")
+my_params <- query_params(
+  page = "14",
+  results_per_page = "56",
+  order_by = c("pose.lat", "asc"),
+  group_by = "key",
+  include_columns = c(
+    "id",
+    "key",
+    "path_best",
+    "timestamp_start",
+    "path_best_thm",
+    "pose.timestamp",
+    "pose.lat",
+    "pose.lon",
+    "pose.alt",
+    "pose.dep",
+    "pose.data",
+    "pose.id",
+    "deployment.key",
+    "deployment.campaign.key",
+    "deployment.id",
+    "deployment.campaign.id",
+    "event_log"
+  ))
+test1 <- append_url(api$host, "api/annotation_set", my_filters_2, my_params) #%>% request("GET", api$auth, "test.json")
+  
 ```
 
-
-
-```{r}
-# # parse JSON or handle errors
-# if (r$status_code == 200) {
-#   # Parse the response JSON content
-#   json_content <- httr::content(r, "text", encoding = "UTF-8")
-#   if (nchar(json_content) > 0) {
-#     my_list <- jsonlite::fromJSON(json_content, flatten = TRUE)
-#     my_df <- as.data.frame(my_list)
-#     
-#     # Print a preview of the data
-#     print("Succesful request")
-#     print(head(my_df))
-#   } else {
-#     print("No data")
-#   }
-# } else {
-#   # Print the error status and message
-#   print(paste("Didn't work. Status code:", r$status_code))
-#   print("Response content:")
-#   print(httr::content(r, "text", encoding = "UTF-8"))
-# }
-```
 
