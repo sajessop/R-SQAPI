@@ -6,6 +6,7 @@
 library(R6)
 library(httr)
 library(jsonlite)
+library(getPass)
 ```
 
 # Create class SQAPI with property: host 
@@ -21,7 +22,7 @@ SQAPI <- R6Class("SQAPI", public = list(
     }
     
     if (is.null(getOption("api_token"))) {
-      self$auth <- readline(prompt = "Enter your API token: ")
+      self$auth <- getPass::getPass(msg = "Enter your API token: ")
       options(api_token = self$auth)
     } else {
       self$auth <- getOption("api_token")
@@ -234,12 +235,12 @@ append_url <- function(host,
 # filename as string ensuring file extenstion matched specified template (or the default json)
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-request <- function(url, verb, token, filename) {
+request <- function(url, verb, token) {
   response <- httr::VERB(
     verb = verb,
     url = url,
-    config = httr::add_headers(Authorization = paste("Bearer", token)),
-    write_disk(filename, overwrite = TRUE)
+    config = httr::add_headers(Authorization = paste("Bearer", token))#,
+    #write_disk(filename, overwrite = TRUE)
   )
   
   # Print status
@@ -265,19 +266,32 @@ request <- function(url, verb, token, filename) {
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 ## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
+# name the metadata.json as filename_metadata.json
 export <- function(url,
                    verb,
                    token,
                    poll = TRUE,
+                   write_disk = FALSE,
                    filename,
                    metadata_filename = "metadata.json") {
-  response <- httr::VERB(
-    verb = verb,
-    url = url,
-    config = httr::add_headers(Authorization = paste("Bearer", token)),
-    write_disk(filename, overwrite = TRUE)
-  )
+  # Initial request
+  if (write_disk) {
+    response <- httr::VERB(
+      verb = verb,
+      url = url,
+      config = httr::add_headers(Authorization = paste("Bearer", token)),
+      httr::write_disk(filename, overwrite = TRUE)
+    )
+  } else {
+    response <- httr::VERB(
+      verb = verb,
+      url = url,
+      config = httr::add_headers(Authorization = paste("Bearer", token)),
+      httr::write_memory()
+    )
+  }
   
+  # Extract JSON response
   json <- jsonlite::fromJSON(
     content(response, 'text', encoding = "UTF-8"),
     simplifyVector = TRUE,
@@ -285,117 +299,126 @@ export <- function(url,
   )
   
   if (poll) {
-    # Poll
+    # Polling
     results_response <- NULL
     
-    # Define urls and print details
+    # Define URLs
     host <- "https://squidle.org"
     status_url <- paste0(host, json$status_url)
     result_url <- paste0(host, json$result_url)
-    print(json$message)
-    print(paste0("Status url:", status_url))
-    print(paste0("Results url:", result_url))
     
-    # Initialize progress bar
-    pbar <- txtProgressBar(min = 0,
-                           max = 100,
-                           style = 3)
+    print(json$message)
+    print(paste0("Status URL: ", status_url))
+    print(paste0("Results URL: ", result_url))
+    
+    # Progress Bar
+    pbar <- txtProgressBar(min = 0, max = 100, style = 3)
     
     while (TRUE) {
-      # Poll the status URL to check progress
+      # Check status
       status_response <- httr::VERB(
         verb = verb,
         url = status_url,
         config = httr::add_headers(Authorization = paste("Bearer", token))
       )
-      json_status_respones <- jsonlite::fromJSON(
+      
+      json_status_response <- jsonlite::fromJSON(
         content(status_response, 'text', encoding = "UTF-8"),
         simplifyVector = TRUE,
         flatten = TRUE
       )
       
-      # Check if server indicates result is available
-      if (json_status_respones$result_available ||
-          json_status_respones$status == "done") {
-        results_response <- httr::VERB(
-          verb = verb,
-          url = result_url,
-          write_disk(filename, overwrite = TRUE),
-          config = httr::add_headers(Authorization = paste("Bearer", token))
-        )
+      # If the result is ready
+      if (json_status_response$result_available || json_status_response$status == "done") {
+        if (write_disk) {
+          results_response <- httr::VERB(
+            verb = verb,
+            url = result_url,
+            config = httr::add_headers(Authorization = paste("Bearer", token)),
+            httr::write_disk(filename, overwrite = TRUE)  # Correct result URL
+          )
+        } else {
+          results_response <- httr::VERB(
+            verb = verb,
+            url = result_url,
+            config = httr::add_headers(Authorization = paste("Bearer", token)),
+            httr::write_memory()
+          )
+        }
+        
         setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
         break
-      } else if (json_status_respones$status == "error") {
-        close(pbar)  # Close progress bar on error
+      } else if (json_status_response$status == "error") {
+        close(pbar)
         stop("Error in processing the request.")
       }
       
-      # Calculate overall progress bases on cumulative iterations
-      stages <- json_status_respones$progress
-      total_iterations <- sum(sapply(stages, function(stage) {
-        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-          stage$iteration_count
-        } else {
-          0
-        }
-      }))
+      # Calculate progress
+      stages <- json_status_response$progress
+      total_iterations <- sum(sapply(stages, function(stage) if (!is.null(stage$iteration_count)) stage$iteration_count else 0))
+      completed_iterations <- sum(sapply(stages, function(stage) if (!is.null(stage$iteration)) stage$iteration else 0))
       
-      completed_iterations <- sum(sapply(stages, function(stage) {
-        if (!is.null(stage$iteration_count) && stage$iteration_count > 0) {
-          stage$iteration
-        } else {
-          0
-        }
-      }))
-      
-      # Calculate overall progress as a percentage
-      if (total_iterations > 0) {
-        overall_progress <- (completed_iterations / total_iterations) * 100
-      } else {
-        overall_progress <- 0
-      }
-      
-      # Update the progress bar
+      overall_progress <- if (total_iterations > 0) (completed_iterations / total_iterations) * 100 else 0
       setTxtProgressBar(pbar, overall_progress)
       
-      Sys.sleep(1)  # Wait before polling again to avoid excessive requests
+      Sys.sleep(1)  # Avoid excessive polling
     }
     
-    close(pbar)  # Close progress bar
-    
-    # Define response objects
+    close(pbar)
     ret_results <- results_response
-    # write metadata if csv
-    if (grepl("data.csv|dataframe.csv", url)) {
-      meta <- ret_results$headers$`x-content-metadata`
-      write(meta, metadata_filename)
-      #Print metadata message
-      cat("See metadata file:")
-      print(metadata_filename)
-    } else{
-      NULL
-    }
-    # Print response object
-    print(ret_results)
   } else {
     ret_results <- response
-    if (grepl("data.csv|dataframe.csv", url)) {
-      meta <- ret_results$headers$`x-content-metadata`
-      write(meta, metadata_filename)
-      #Print metadata message
-      cat("See metadata file:")
-      print(metadata_filename)
-    }
-    # Print response object
-    print(ret_results)
   }
   
-  cat("\n", "Response Status Code:", response$status_code, "\n")
+  # Handle metadata if it's a CSV file
+  if (grepl("data.csv|dataframe.csv", url)) {
+    meta <- ret_results$headers$`x-content-metadata`
+    writeLines(meta, metadata_filename)  
+    cat("See metadata file: ", metadata_filename, "\n")
+  }
+  
+  cat("\nResponse Status Code: ", response$status_code, "\n")
   return(ret_results)
 }
 
 ```
 
+
+```{r}
+
+# Helper function to recursively search list for key and return the associated value
+find_key <- function(lst, key) {
+  if (is.list(lst)) {
+    if (key %in% names(lst)) {
+      return(lst[[key]])
+    }
+    for (sub in lst) {
+      result <- find_key(sub, key)
+      if (!is.null(result)) return(result)
+    }
+  }
+  return(NULL)
+}
+
+# Example usage
+
+find_key(my_params_5, "template")  
+
+parse <- function(response, query_params) {
+  template <- find_key(query_params, "template")
+  parsed <- switch(template,
+                   "data.csv" = {
+                     raw_text <- rawToChar(response$content)
+                     read.csv(textConnection(raw_text))
+                   },
+                   "dataframe.json" = {
+                     print("I havent figured out how to make this work yet")
+                     NULL
+                   },
+                   NULL)
+  return(parsed)
+}
+```
 
 
 # Updated usage
@@ -412,7 +435,7 @@ api <- SQAPI$new()
   # Create filters
   my_filters <- query_filter(name = "id", op = "eq", val = "5432")
   # Append filters and send request
-  r <- append_url(api$host, "api/annotation_set", my_filters) %>% request("GET", api$auth, "test.json")
+  r <- append_url(api$host, "api/annotation_set", my_filters) %>% request("GET", api$auth)
   
   # look at url
   my_url <- append_url(api$host, "api/annotation_set", my_filters)
@@ -420,7 +443,7 @@ api <- SQAPI$new()
 }
 
 # Example 1 - A nested query to Get all media_collections that contain media from a specific campaign matching the key "Batemans201011"
-{
+
   # Create filters (nested)
   my_filters1 <- query_filter(
     name = "media",
@@ -441,7 +464,7 @@ api <- SQAPI$new()
   # look at url
   my_url1 <- append_url(api$host, "api/media_collection", my_filters1)
   cat(URLdecode(my_url1))
-}
+
 
 # Example 2 - A simple query to Get all annotations that match annotation_set_id = 5432 and specify pagination params
 {
@@ -521,7 +544,7 @@ api <- SQAPI$new()
   r4 <- append_url(api$host,
                    "api/media_collection/13453/export",
                    my_filters_4,
-                   my_params_4) %>% export("GET", api$auth, filename = "test4.json")
+                   my_params_4) %>% export("GET", api$auth,  filename = "test4.json")
 
   # Look at url
   my_url_4 <- append_url(api$host,
@@ -568,7 +591,7 @@ api <- SQAPI$new()
   r5 <- append_url(api$host,
                    "api/media_collection/13453/export",
                    my_filters_5,
-                   my_params_5) %>% export("GET", api$auth, filename = "test5.csv", metadata_filename = "my_metadata5.json")
+                   my_params_5) %>% export("GET", api$auth)
   # Inspect data
   test5 <- read.csv("test5.csv")
   
