@@ -224,11 +224,12 @@ append_url <- function(api,
 # filename as string ensuring file extenstion matched specified template (or the default json)
 ```{r}
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-request <- function(api,
+request <- function(verb, 
+                    api,
                     endpoint,
                     query_filters = NULL,
-                    query_parameters = NULL,
-                    verb) {
+                    query_parameters = NULL
+                    ) {
   url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
   token <- api$auth
   response <- httr::VERB(
@@ -262,13 +263,17 @@ request <- function(api,
 ## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 ## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
 # name the metadata.json as filename_metadata.json
-export <- function(url,
+# tidy up
+export <- function(api,
+                    endpoint,
+                    query_filters = NULL,
+                    query_parameters = NULL,
                    verb,
-                   api,
                    poll = TRUE,
                    write_disk = FALSE,
                    filename,
                    metadata_filename = "metadata.json") {
+  url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
   token <- api$auth
   # Initial request
   if (write_disk) {
@@ -423,9 +428,7 @@ api <- SQAPI$new()
 {
   # Create filters
   my_filters <- query_filter(name = "id", op = "eq", val = "5432")
-  # Append filters and send request
-  r <- append_url(api, "api/annotation_set", my_filters) %>% request("GET", api)
-  
+  # Send request
   rtest <- request(api = api, endpoint = "api/annotation_set", query_filters = my_filters, verb = "GET")
   # parse
   p <- parse(r)
@@ -436,7 +439,7 @@ api <- SQAPI$new()
 }
 
 # Example 1 - A nested query to Get all media_collections that contain media from a specific campaign matching the key "Batemans201011"
-
+{
   # Create filters (nested)
   my_filters1 <- query_filter(
     name = "media",
@@ -451,15 +454,12 @@ api <- SQAPI$new()
       )
     )
   )
-  # Append filters and send request
-  r1 <- append_url(api, "api/media_collection", my_filters1) %>% request("GET", api)
+  # Send request
+  r1 <- request("GET", api, "api/media_collection", my_filters1)
   
   # parse 
-  p1 <- parse(r1)
+  p1 <- parse(r1)}
   
-  # look at url
-  my_url1 <- append_url(api, "api/media_collection", my_filters1)
-  cat(URLdecode(my_url1))
 
 
 # Example 2 - A simple query to Get all annotations that match annotation_set_id = 5432 and specify pagination params
@@ -469,12 +469,10 @@ api <- SQAPI$new()
   # Create other parameters
   my_params_2 <- query_params(page = "14", results_per_page = "56")
   # Append filters and parameters and send request
-  r2 <- append_url(api, "api/annotation", my_filters_2, my_params_2) %>% request("GET", api)
+  r2 <- request("GET", api, "api/annotation", my_filters_2, my_params_2)
   # Parse
   p2 <- parse(r2, my_params_2)
-  # look at url
-  my_url2 <- append_url(api, "api/annotation", my_filters_2, my_params_2)
-  cat(URLdecode(my_url2))
+
 }
 
 # Example 3 - Get request to export endpoint using status polling and template = data.csv to download the data as a .csv
@@ -509,21 +507,18 @@ api <- SQAPI$new()
       "event_log"
     )
   )
-  # Append filters and parameters and send request
-  r3 <- append_url(api,
-                   "api/media_collection/13453/export",
-                   my_filters_3,
-                   my_params_3) %>% export("GET", api, metadata_filename = "my_metadata3.json")
+  # Send request
+  r3 <- export(
+    api = api,
+    endpoint = "api/media_collection/13453/export",
+    query_filters = my_filters_3,
+    query_parameters = my_params_3,
+    verb = "GET",
+    metadata_filename = "my_metadata3.json"
+  )
 
   # Parse
   p3 <- parse(r3, my_params_3)
-
-    # Look at url
-  my_url_3 <- append_url(api,
-                         "api/media_collection/13453/export",
-                         my_filters_3,
-                         my_params_3)
-  cat(URLdecode(my_url_3))
   
 }
 
@@ -539,21 +534,17 @@ api <- SQAPI$new()
   my_params_4 <- query_params(
     limit = 100, offset = 20
   )
-  # Append filters and parameters and send request
-  r4 <- append_url(api,
-                   "api/media_collection/13453/export",
-                   my_filters_4,
-                   my_params_4) %>% export("GET", api)
+  # Send request
+  r4 <-  export(
+    api = api,
+    endpoint = "api/media_collection/13453/export",
+    query_filters = my_filters_4,
+    query_parameters = my_params_4,
+    "GET"
+  )
 
   # Parse
   p4 <- parse(r4, my_params_4)
-  
-  # Look at url
-  my_url_4 <- append_url(api,
-                         "api/media_collection/13453/export",
-                         my_filters_4,
-                         my_params_4)
-  cat(URLdecode(my_url_4))
   
 }
 
@@ -590,10 +581,13 @@ api <- SQAPI$new()
     )
   )
   # Append filters and parameters and send request
-  r5 <- append_url(api,
-                   "api/media_collection/13453/export",
-                   my_filters_5,
-                   my_params_5) %>% export("GET", api)
+  r5 <- export(
+    api = api,
+    endpoint = "api/media_collection/13453/export",
+    query_filters = my_filters_5,
+    query_parameters = my_params_5,
+    verb = "GET"
+  )
 
   # Parse
   p5 <- parse(r5, my_params_5)
@@ -607,8 +601,6 @@ api <- SQAPI$new()
   
 }
 
-# Can also use append_url to combine just base url and endpoint 
-simple_url <- append_url(host = api, endpoint = "api/annotation/5432") %>% request("GET", api, filename = "simple.json")
 ```
 
 
