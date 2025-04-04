@@ -81,7 +81,6 @@ query_filter <- function(name,
 # order by is input as a vector containing two elements the first being the field and the second being direction (either "asc" or "desc")
 # single is a boolean representing whether a single result is expected (I have not tested this)
 ```{r}
-# WIP
 query_params <- function(template = NULL,
                          disposition = NULL,
                          include_columns = NULL,
@@ -171,7 +170,6 @@ query_params <- function(template = NULL,
 # input endpoint as a string
 # input query_filers and query_parameters as the *exact* output from the functions used to create them 
 ```{r}
-#WIP
 append_url <- function(api,
                        endpoint,
                        query_filters = NULL,
@@ -268,34 +266,62 @@ request <- function(verb,
 # name the metadata.json as filename_metadata.json
 # tidy up
 export <- function(api,
-                    endpoint,
-                    query_filters = NULL,
-                    query_parameters = NULL,
+                   endpoint,
+                   query_filters = NULL,
+                   query_parameters = NULL,
                    verb,
                    poll = TRUE,
                    write_disk = FALSE,
-                   filename,
+                   filename = NULL,
                    metadata_filename = "metadata.json") {
-  url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
+  # Construct and print URL
+  url <- append_url(
+    api = api,
+    endpoint = endpoint,
+    query_filters = query_filters,
+    query_parameters = query_parameters
+  )
   print("Constructed URL:")
   cat(URLdecode(url))
+  cat("\n")
+  
+  # Retrieve token
   token <- api$auth
-  # Initial request
-  if (write_disk) {
-    response <- httr::VERB(
-      verb = verb,
-      url = url,
-      config = httr::add_headers(Authorization = paste("Bearer", token)),
-      httr::write_disk(filename, overwrite = TRUE)
-    )
-  } else {
-    response <- httr::VERB(
-      verb = verb,
-      url = url,
-      config = httr::add_headers(Authorization = paste("Bearer", token)),
-      httr::write_memory()
-    )
+  
+  # Handle filename error
+  if (write_disk && is.null(filename)) {
+    stop("Error: 'write_disk' is TRUE, but 'filename' is not provided.")
   }
+  
+  # Helper function to make an API request
+  make_request <- function(url,
+                           verb,
+                           token,
+                           write_to_disk = FALSE,
+                           file = NULL) {
+    if (write_to_disk) {
+      return(
+        httr::VERB(
+          verb = verb,
+          url = url,
+          config = httr::add_headers(Authorization = paste("Bearer", token)),
+          httr::write_disk(file, overwrite = TRUE)
+        )
+      )
+    } else {
+      return(
+        httr::VERB(
+          verb = verb,
+          url = url,
+          config = httr::add_headers(Authorization = paste("Bearer", token)),
+          httr::write_memory()
+        )
+      )
+    }
+  }
+  
+  # Initial request
+  response <- make_request(url, verb, token, write_disk, filename)
   
   # Extract JSON response
   json <- jsonlite::fromJSON(
@@ -309,7 +335,7 @@ export <- function(api,
     results_response <- NULL
     
     # Define URLs
-    host <- "https://squidle.org"
+    host <- paste(api$host)
     status_url <- paste0(host, json$status_url)
     result_url <- paste0(host, json$result_url)
     
@@ -318,7 +344,9 @@ export <- function(api,
     print(paste0("Results URL: ", result_url))
     
     # Progress Bar
-    pbar <- txtProgressBar(min = 0, max = 100, style = 3)
+    pbar <- txtProgressBar(min = 0,
+                           max = 100,
+                           style = 3)
     
     while (TRUE) {
       # Check status
@@ -335,7 +363,8 @@ export <- function(api,
       )
       
       # If the result is ready
-      if (json_status_response$result_available || json_status_response$status == "done") {
+      if (json_status_response$result_available ||
+          json_status_response$status == "done") {
         if (write_disk) {
           results_response <- httr::VERB(
             verb = verb,
@@ -361,26 +390,52 @@ export <- function(api,
       
       # Calculate progress
       stages <- json_status_response$progress
-      total_iterations <- sum(sapply(stages, function(stage) if (!is.null(stage$iteration_count)) stage$iteration_count else 0))
-      completed_iterations <- sum(sapply(stages, function(stage) if (!is.null(stage$iteration)) stage$iteration else 0))
+      total_iterations <- sum(sapply(stages, function(stage)
+        if (!is.null(stage$iteration_count))
+          stage$iteration_count
+        else
+          0))
+      completed_iterations <- sum(sapply(stages, function(stage)
+        if (!is.null(stage$iteration))
+          stage$iteration
+        else
+          0))
       
-      overall_progress <- if (total_iterations > 0) (completed_iterations / total_iterations) * 100 else 0
+      overall_progress <- if (total_iterations > 0)
+        (completed_iterations / total_iterations) * 100
+      else
+        0
       setTxtProgressBar(pbar, overall_progress)
       
       Sys.sleep(1)  # Avoid excessive polling
     }
     
     close(pbar)
+    
+    # Retrieve final response
     ret_results <- results_response
   } else {
     ret_results <- response
   }
   
+  
   # Handle metadata if it's a CSV file
   if (grepl("data.csv|dataframe.csv", url)) {
+    # Clean endpoint for filename
+    safe_endpoint <- gsub("[^a-zA-Z0-9_]", "_", endpoint)
+    
+    # Make metadata_filename based on filename or endpoint
+    metadata_filename <- if (!is.null(filename)) {
+      paste(filename, metadata_filename, sep = "_")
+    } else {
+      paste(safe_endpoint, metadata_filename, sep = "_")
+    }
+    
     meta <- ret_results$headers$`x-content-metadata`
-    writeLines(meta, metadata_filename)  
-    cat("See metadata file: ", metadata_filename, "\n")
+    if (!is.null(meta)) {
+      writeLines(meta, metadata_filename)
+      cat("See metadata file: ", metadata_filename, "\n")
+    }
   }
   
   cat("\nResponse Status Code: ", response$status_code, "\n")
@@ -525,6 +580,17 @@ api <- SQAPI$new()
   # Parse
   p3 <- parse(r3, my_params_3)
   
+  # Send request and write to disk
+    r3_write_disk <- export(
+    api = api,
+    endpoint = "api/media_collection/13453/export",
+    query_filters = my_filters_3,
+    query_parameters = my_params_3,
+    verb = "GET",
+    write_disk = TRUE,
+    #filename = "r3_write_disk",
+    metadata_filename = "my_metadata3.json"
+  )
 }
 
 # Example 4 - Get request to export endpoint using status polling and defining limit and offset parameters
