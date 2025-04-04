@@ -47,7 +47,7 @@ find_key <- function(lst, key) {
 }
 
 # Example usage
-find_key(my_params_5, "template")
+# find_key(my_params_5, "template")
 ```
 
 # Helper function to construct host + endpoint
@@ -231,6 +231,9 @@ request <- function(verb,
                     query_parameters = NULL
                     ) {
   url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
+  print("Constructed URL:")
+  cat(URLdecode(url))
+  cat("\n")
   token <- api$auth
   response <- httr::VERB(
     verb = verb,
@@ -274,6 +277,8 @@ export <- function(api,
                    filename,
                    metadata_filename = "metadata.json") {
   url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
+  print("Constructed URL:")
+  cat(URLdecode(url))
   token <- api$auth
   # Initial request
   if (write_disk) {
@@ -433,9 +438,6 @@ api <- SQAPI$new()
   # parse
   p <- parse(r)
   
-  # look at url
-  my_url <- append_url(api, "api/annotation_set", my_filters)
-  cat(URLdecode(my_url))
 }
 
 # Example 1 - A nested query to Get all media_collections that contain media from a specific campaign matching the key "Batemans201011"
@@ -459,7 +461,10 @@ api <- SQAPI$new()
   
   # parse 
   p1 <- parse(r1)}
-  
+
+
+# Can also structure as request then pipe into parse
+  r1 <- request("GET", api, "api/media_collection", my_filters1) %>% parse()
 
 
 # Example 2 - A simple query to Get all annotations that match annotation_set_id = 5432 and specify pagination params
