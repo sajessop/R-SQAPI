@@ -229,7 +229,6 @@ request <- function(verb,
   
   # Helper function to make request handling get/post/patch logic
   make_request <- function(verb, url, token, body = NULL) {
-    
     # Handle body for POST or PATCH requests
     if (!is.null(body)) {
       # Ensure body is a valid JSON object for POST/PATCH
@@ -237,15 +236,17 @@ request <- function(verb,
     }
     
     # Print statement
-     print(paste("Body for", verb, "request: ", body))
+     #print(paste("Body for", verb, "request: ", body))
+    
     # Make the request using httr::VERB
     response <- httr::VERB(
       verb = verb,
       url = url,
       body = body,
       config = httr::add_headers(
-    Authorization = paste("Bearer", api$auth), 
-    "Content-Type" = "application/json"
+    "x-auth-token" =  token,
+    "Content-Type" = "application/json",
+    "Accept" = "application/json"
     )
     )
     
@@ -277,37 +278,6 @@ request <- function(verb,
 }
 ```
 
-```{r}
-# post_me <- httr::content(r, "text", encoding = "UTF-8")
-post_me <- list(
-  id = 1,
-  data = list(),
-  name = "Example Annotation",
-  description = "example description",
-  media_collection_id = 123,
-  label_scheme_id = 456,
-  user_id = 789,
-  created_at = "2025-04-04T12:00:00Z",
-  parent_id = NULL,
-  is_exemplar = FALSE,
-  is_full_bio_score = TRUE,
-  is_real_science = FALSE,
-  is_qaqc = FALSE,
-  is_final = FALSE,
-  type = "base"
-)
-
-posting <- request(verb = "POST", api = api, endpoint = "api/annotation_set", body = post_me)
-
-posting <- httr::VERB(
-      verb = "POST",
-      url = "https://squidle.org/api/annotation_set",
-      body = post_me,
-      config = httr::add_headers(
-    Authorization = paste("Bearer", api$auth), 
-    "Content-Type" = "application/json"
-    ))
-```
 
 # Function to make the VERB request to export endpoint
 # input api as instance of SQAPI
@@ -339,7 +309,7 @@ export <- function(api,
         httr::VERB(
           verb = verb,
           url = url,
-          config = httr::add_headers(Authorization = paste("Bearer", token)),
+          config = httr::add_headers("x-auth-token" =  token),
           httr::write_disk(file, overwrite = TRUE)
         )
       )
@@ -348,7 +318,7 @@ export <- function(api,
         httr::VERB(
           verb = verb,
           url = url,
-          config = httr::add_headers(Authorization = paste("Bearer", token)),
+          config = httr::add_headers("x-auth-token" =  token),
           httr::write_memory()
         )
       )
@@ -406,7 +376,7 @@ export <- function(api,
       status_response <- httr::VERB(
         verb = verb,
         url = status_url,
-        config = httr::add_headers(Authorization = paste("Bearer", token))
+        config = httr::add_headers("x-auth-token" =  token)
       )
       
       json_status_response <- jsonlite::fromJSON(
@@ -563,11 +533,6 @@ api <- SQAPI$new()
   # parse 
   p1 <- parse(r1)}
 
-
-# Can also structure as request then pipe into parse (should work for all examples)
-  r1 <- request("GET", api, "api/media_collection", my_filters1) %>% parse()
-
-
 # Example 2 - A simple query to Get all annotations that match annotation_set_id = 5432 and specify pagination params
 {
   # Create filters
@@ -712,6 +677,22 @@ api <- SQAPI$new()
   
 }
 
+```
+# POST example
+```{r}
+api <- SQAPI$new()
+post_me <- list(
+    "name" = "API test 01",
+    "description" = "Testing API-created media_collection",
+    "user_id"= 007
+)
+
+post <- request(verb = "POST", api = api, endpoint = "api/media_collection", body = post_me)
+
+#then get it?
+test <- query_filter(name = "name", op = "eq", val = "API test 01")
+r6 <- request("GET", endpoint = "api/media_collection", query_filters = test, api = api) %>% parse()
+#seems to work... will add more later
 ```
 
 
