@@ -219,52 +219,106 @@ append_url <- function(api,
 # Can pipe url in from append_url function
 # input verb as string eg "GET"
 # input token as <nameofapiinstance>$auth
-# filename as string ensuring file extenstion matched specified template (or the default json)
 ```{r}
-## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
-request <- function(verb, 
+request <- function(verb,
                     api,
                     endpoint,
                     query_filters = NULL,
-                    query_parameters = NULL
-                    ) {
-  url <- append_url(api = api, endpoint = endpoint, query_filters = query_filters, query_parameters = query_parameters)
-  print("Constructed URL:")
-  cat(URLdecode(url))
-  cat("\n")
-  token <- api$auth
-  response <- httr::VERB(
-    verb = verb,
-    url = url,
-    config = httr::add_headers(Authorization = paste("Bearer", token))#,
-    #write_disk(filename, overwrite = TRUE)
+                    query_parameters = NULL,
+                    body = NULL) {
+  
+  # Helper function to make request handling get/post/patch logic
+  make_request <- function(verb, url, token, body = NULL) {
+    
+    # Handle body for POST or PATCH requests
+    if (!is.null(body)) {
+      # Ensure body is a valid JSON object for POST/PATCH
+      body <- jsonlite::toJSON(body, auto_unbox = TRUE)
+    }
+    
+    # Print statement
+     print(paste("Body for", verb, "request: ", body))
+    # Make the request using httr::VERB
+    response <- httr::VERB(
+      verb = verb,
+      url = url,
+      body = body,
+      config = httr::add_headers(
+    Authorization = paste("Bearer", api$auth), 
+    "Content-Type" = "application/json"
+    )
+    )
+    
+    return(response)
+  }
+  
+  # Construct and print url
+  url <- append_url(
+    api = api,
+    endpoint = endpoint,
+    query_filters = query_filters,
+    query_parameters = query_parameters
   )
+  cat("Constructed URL: ")
+  cat(URLdecode(url), "\n")
+  
+  # Retrieve token
+  token <- api$auth
+  
+  # Make request using helper function
+  response <- make_request(verb, url, token, body)
   
   # Print status
-  cat("Response Status Code:")
-  print(response$status_code)
-  
-  ret_results <- response
+  cat("Response Status Code: ", response$status_code, "\n")
   
   # Print response object
-  print(ret_results)
-  return(ret_results)
+  print(response)
+  return(response)
 }
 ```
 
+```{r}
+# post_me <- httr::content(r, "text", encoding = "UTF-8")
+post_me <- list(
+  id = 1,
+  data = list(),
+  name = "Example Annotation",
+  description = "example description",
+  media_collection_id = 123,
+  label_scheme_id = 456,
+  user_id = 789,
+  created_at = "2025-04-04T12:00:00Z",
+  parent_id = NULL,
+  is_exemplar = FALSE,
+  is_full_bio_score = TRUE,
+  is_real_science = FALSE,
+  is_qaqc = FALSE,
+  is_final = FALSE,
+  type = "base"
+)
+
+posting <- request(verb = "POST", api = api, endpoint = "api/annotation_set", body = post_me)
+
+posting <- httr::VERB(
+      verb = "POST",
+      url = "https://squidle.org/api/annotation_set",
+      body = post_me,
+      config = httr::add_headers(
+    Authorization = paste("Bearer", api$auth), 
+    "Content-Type" = "application/json"
+    ))
+```
 
 # Function to make the VERB request to export endpoint
-# Can pipe url in from append_url function
-# input verb as string eg "GET"
-# input token as <nameofapiinstance>$auth
+# input api as instance of SQAPI
+# input verb and endpoint as string eg "GET"
 # poll=TRUE for export endpoints
 # filename as string ensuring file extenstion matched specified template (or the default json)
 # metadata_filename as string - only need if template has been set as data.csv or dataframe.csv
+# query_filters and query_parameters as created by functions
 ```{r}
-## TO DO: add support for POST and PATCH verbs eg (if (verb == "POST") allow sending of json)
 ## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
-# name the metadata.json as filename_metadata.json
-# tidy up
+# tidy up make polling logic into separate function
 export <- function(api,
                    endpoint,
                    query_filters = NULL,
@@ -274,31 +328,12 @@ export <- function(api,
                    write_disk = FALSE,
                    filename = NULL,
                    metadata_filename = "metadata.json") {
-  # Construct and print URL
-  url <- append_url(
-    api = api,
-    endpoint = endpoint,
-    query_filters = query_filters,
-    query_parameters = query_parameters
-  )
-  print("Constructed URL:")
-  cat(URLdecode(url))
-  cat("\n")
-  
-  # Retrieve token
-  token <- api$auth
-  
-  # Handle filename error
-  if (write_disk && is.null(filename)) {
-    stop("Error: 'write_disk' is TRUE, but 'filename' is not provided.")
-  }
-  
   # Helper function to make an API request
-  make_request <- function(url,
-                           verb,
-                           token,
-                           write_to_disk = FALSE,
-                           file = NULL) {
+  make_export_request <- function(url,
+                                  verb,
+                                  token,
+                                  write_to_disk = FALSE,
+                                  file = NULL) {
     if (write_to_disk) {
       return(
         httr::VERB(
@@ -320,8 +355,26 @@ export <- function(api,
     }
   }
   
+  # Construct and print URL
+  url <- append_url(
+    api = api,
+    endpoint = endpoint,
+    query_filters = query_filters,
+    query_parameters = query_parameters
+  )
+  cat("Constructed URL: ")
+  cat(URLdecode(url), "\n")
+  
+  # Retrieve token
+  token <- api$auth
+  
+  # Handle filename error
+  if (write_disk && is.null(filename)) {
+    stop("Error: 'write_disk' is TRUE, but 'filename' is not provided.")
+  }
+  
   # Initial request
-  response <- make_request(url, verb, token, write_disk, filename)
+  response <- make_export_request(url, verb, token, write_disk, filename)
   
   # Extract JSON response
   json <- jsonlite::fromJSON(
@@ -365,21 +418,14 @@ export <- function(api,
       # If the result is ready
       if (json_status_response$result_available ||
           json_status_response$status == "done") {
-        if (write_disk) {
-          results_response <- httr::VERB(
-            verb = verb,
-            url = result_url,
-            config = httr::add_headers(Authorization = paste("Bearer", token)),
-            httr::write_disk(filename, overwrite = TRUE)  # Correct result URL
-          )
-        } else {
-          results_response <- httr::VERB(
-            verb = verb,
-            url = result_url,
-            config = httr::add_headers(Authorization = paste("Bearer", token)),
-            httr::write_memory()
-          )
-        }
+        # Call helper function to handle the write_disk logic and make request to result url
+        results_response <- make_export_request(
+          url = result_url,
+          verb = verb,
+          token = token,
+          write_to_disk = write_disk,
+          file = filename
+        )
         
         setTxtProgressBar(pbar, 100)  # Set progress to 100% when done
         break
@@ -480,8 +526,8 @@ parse <- function(response, query_params = NULL) {
 # Lib for pipes
 library(magrittr)
 
-# Initialize api to handle authentication (using default host)
-## Will prompt for token in console
+# Initialize api to handle authentication and host (using default host)
+## Will prompt for token
 api <- SQAPI$new()
 
 # Example 0 - A simple query
