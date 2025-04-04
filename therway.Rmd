@@ -489,7 +489,7 @@ api <- SQAPI$new()
   # Create filters
   my_filters <- query_filter(name = "id", op = "eq", val = "5432")
   # Send request
-  rtest <- request(api = api, endpoint = "api/annotation_set", query_filters = my_filters, verb = "GET")
+  r <- request(api = api, endpoint = "api/annotation_set", query_filters = my_filters, verb = "GET")
   # parse
   p <- parse(r)
   
@@ -518,7 +518,7 @@ api <- SQAPI$new()
   p1 <- parse(r1)}
 
 
-# Can also structure as request then pipe into parse
+# Can also structure as request then pipe into parse (should work for all examples)
   r1 <- request("GET", api, "api/media_collection", my_filters1) %>% parse()
 
 
@@ -588,8 +588,8 @@ api <- SQAPI$new()
     query_parameters = my_params_3,
     verb = "GET",
     write_disk = TRUE,
-    #filename = "r3_write_disk",
-    metadata_filename = "my_metadata3.json"
+    filename = "media_collection_13453",
+    metadata_filename = "metadata3.json"
   )
 }
 
@@ -663,12 +663,6 @@ api <- SQAPI$new()
   # Parse
   p5 <- parse(r5, my_params_5)
   
-  # Look at url
-  my_url_5 <- append_url(api,
-                         "api/media_collection/13453/export",
-                         my_filters_5,
-                         my_params_5)
-  cat(URLdecode(my_url_5))
   
 }
 
