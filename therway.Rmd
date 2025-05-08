@@ -11,24 +11,28 @@ library(getPass)
 
 # Create class SQAPI with property: host 
 ```{r}
-SQAPI <- R6Class("SQAPI", public = list(
+#' Create class "SQAPI" with property "host" and "auth"
+SQAPI <- R6::R6Class("SQAPI", public = list(
   host = NULL,
   auth = NULL,
+
   initialize = function(host = NULL) {
-    if (is.null(host)) {
-      self$host <- "https://squidle.org"
-    } else{
-      self$host <- host
-    }
-    
+    self$host <- if (is.null(host)) "https://squidle.org" else host
+
     if (is.null(getOption("api_token"))) {
-      self$auth <- getPass::getPass(msg = "Enter your API token: ")
+      if (interactive()) {
+        self$auth <- getPass::getPass("Enter your API token: ")
+      } else {
+        # Fallback for non-interactive (e.g. devtools::check()
+        self$auth <- "default_password"
+      }
       options(api_token = self$auth)
     } else {
       self$auth <- getOption("api_token")
     }
   }
 ))
+
 ```
 
 # Helper function to recursively search list for key and return the associated value
@@ -180,7 +184,7 @@ append_url <- function(api,
   # Wrap filters in a list
   filters <- list(filters = list(query_filters))
 
-  # Initialize q list
+  # Initialise q list
   q <- list()
 
   # Process query parameters
@@ -216,9 +220,7 @@ append_url <- function(api,
 
 
 # Function to make the VERB request to non export endpoint
-# Can pipe url in from append_url function
 # input verb as string eg "GET"
-# input token as <nameofapiinstance>$auth
 ```{r}
 request <- function(verb,
                     api,
@@ -289,11 +291,11 @@ request <- function(verb,
 ```{r}
 ## Note: Metadata only writes if template has been set as data.csv or dataframe.csv
 # tidy up make polling logic into separate function
-export <- function(api,
+export <- function(verb, 
+                   api,
                    endpoint,
                    query_filters = NULL,
                    query_parameters = NULL,
-                   verb,
                    poll = TRUE,
                    write_disk = FALSE,
                    filename = NULL,
@@ -325,6 +327,7 @@ export <- function(api,
     }
   }
   
+
   # Construct and print URL
   url <- append_url(
     api = api,
@@ -341,6 +344,11 @@ export <- function(api,
   # Handle filename error
   if (write_disk && is.null(filename)) {
     stop("Error: 'write_disk' is TRUE, but 'filename' is not provided.")
+  }
+  
+  # Check verb input
+  if (!toupper(verb) %in% c("GET", "POST", "PUT", "DELETE", "PATCH")) {
+    stop("Unsupported HTTP verb: ", verb)
   }
   
   # Initial request
@@ -453,6 +461,12 @@ export <- function(api,
       cat("See metadata file: ", metadata_filename, "\n")
     }
   }
+  
+  # Print file write details
+  if (write_disk) {
+    cat("File downloaded to:", filename, "\n")
+  }
+
   
   cat("\nResponse Status Code: ", response$status_code, "\n")
   return(ret_results)
@@ -599,7 +613,7 @@ api <- SQAPI$new()
     query_parameters = my_params_3,
     verb = "GET",
     write_disk = TRUE,
-    filename = "media_collection_13453",
+    filename = "media_collection_13453.json",
     metadata_filename = "metadata3.json"
   )
 }
